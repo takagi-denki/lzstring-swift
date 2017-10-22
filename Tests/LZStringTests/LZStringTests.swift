@@ -10,11 +10,15 @@ class LZStringTests: XCTestCase {
     var compressedUInt8Array : [UInt8] = []
 
     func testDataURL(name : String) -> URL {
+#if os(OSX) || os(iOS)
         guard let url = Bundle(for: type(of: self)).url(forResource: name, withExtension: "txt") else {
             return URL(fileURLWithPath: "./Tests/Resources/\(name).txt")
         }
 
         return url
+#else
+        return URL(fileURLWithPath: "./Tests/Resources/\(name).txt")
+#endif
     }
 
     override func setUp() {
