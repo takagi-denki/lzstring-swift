@@ -2,7 +2,7 @@ language: objective-c
 osx_image: xcode9
 
 script:
-  - swift test
+  - xcodebuild test -scheme ${SCHEME_NAME}
 
 after_success:
   - bash <(curl -s https://codecov.io/bash)
