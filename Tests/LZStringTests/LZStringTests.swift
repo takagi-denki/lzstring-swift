@@ -46,6 +46,27 @@ class LZStringTests: XCTestCase {
         let compress : Data = LZString.compress(input: LZStringTests.text)
         XCTAssertEqual(compressed, compress)
     }
+    
+    func testEmojiCompress() {
+        let compress : Data = LZString.compress(input: "🥺")
+        let expect = Data.init([0x06, 0x9f, 0xf5, 0xe2, 0x00, 0xda])
+        XCTAssertEqual(expect, compress)
+    }
+    
+    func testEmojiDecompress() {
+        let decompress = LZString.decompress(input: Data.init([0x06, 0x9f, 0xf5, 0xe2, 0x00, 0xda]))
+        XCTAssertEqual("🥺", decompress)
+    }
+    
+    func testEmojiBase64Compress() {
+        let compress = LZString.compressToBase64(input: "🥺")
+        XCTAssertEqual("nwbi9do=", compress)
+    }
+    
+    func testEmojiBase64Decompress() {
+        let decompress = LZString.decompressFromBase64(input: "nwbi9do=")
+        XCTAssertEqual("🥺", decompress)
+    }
 
     func testDecompress() {
         let decompress = LZString.decompress(input: compressed)
@@ -94,12 +115,16 @@ class LZStringTests: XCTestCase {
 
     static var allTests = [
         ("testCompress", testCompress),
+        ("testEmojiCompress", testEmojiCompress),
         ("testCompressUtf16", testCompressUtf16),
         ("testCompressBase64", testCompressBase64),
+        ("testEmojiBase64Compress", testEmojiBase64Compress),
         ("testCompressUri", testCompressUri),
         ("testCompressUInt8Array", testCompressUInt8Array),
         ("testDecompress", testDecompress),
+        ("testEmojiDecompress", testEmojiDecompress),
         ("testDecompressUtf16", testDecompressUtf16),
+        ("testEmojiBase64Decompress", testEmojiBase64Decompress),
         ("testDecompressBase64", testDecompressBase64),
         ("testDecompressUri", testDecompressUri),
         ("testDecompressUInt8Array", testDecompressUInt8Array),
