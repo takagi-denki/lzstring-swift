@@ -112,6 +112,10 @@ class LZStringTests: XCTestCase {
         let decompress = LZString.decompressFromUInt8Array(input: compressedUInt8Array)
         XCTAssertEqual(decompress, LZStringTests.text)
     }
+    
+    func testVeryLongStringCompression() {
+        
+    }
 
     static var allTests = [
         ("testCompress", testCompress),
