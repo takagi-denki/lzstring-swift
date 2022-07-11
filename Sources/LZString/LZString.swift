@@ -411,15 +411,15 @@ public func decompress(input: Data) -> String {
 }
 
 private func _decompress(length: Int, resetValue: Int, nextValue: @escaping GetNextValue) -> String {
-    var dict : [Int:[UInt16]] = [0 : [0], 1 : [1], 2 : [2]]
+    var dict : [Int:[UInt64]] = [0 : [0], 1 : [1], 2 : [2]]
     var next = 0
     var enlargeIn = 4
     var dictSize = 4
     var numBits = 3
     var bits = 0
-    var c : UInt16 = 0
-    var entry : [UInt16] = []
-    var w : [UInt16] = []
+    var c : UInt64 = 0
+    var entry : [UInt64] = []
+    var w : [UInt64] = []
     var result = Data()
     var data = (value: nextValue(0), position: resetValue, index: 1)
 
@@ -449,10 +449,10 @@ private func _decompress(length: Int, resetValue: Int, nextValue: @escaping GetN
 
     if next == 0 {
         bits = _slide(data: &data, maxpower: 2 << 7)
-        c = UInt16(bits)
+        c = UInt64(bits)
     } else if next == 1 {
         bits = _slide(data: &data, maxpower: 2 << 15)
-        c = UInt16(bits)
+        c = UInt64(bits)
     } else if next == 2 {
         return ""
     }
@@ -469,19 +469,19 @@ private func _decompress(length: Int, resetValue: Int, nextValue: @escaping GetN
         }
 
         bits = _slide(data: &data, maxpower: 2 << (numBits - 1))
-        c = UInt16(bits)
+        c = UInt64(bits)
 
         if c == 0 {
             bits = _slide(data: &data, maxpower: 2 << 7)
-            dict[dictSize] = [UInt16(bits)]
+            dict[dictSize] = [UInt64(bits)]
             dictSize += 1
-            c = UInt16(dictSize - 1)
+            c = UInt64(dictSize - 1)
             enlargeIn -= 1
         } else if c == 1 {
             bits = _slide(data: &data, maxpower: 2 << 15)
-            dict[dictSize] = [UInt16(bits)]
+            dict[dictSize] = [UInt64(bits)]
             dictSize += 1
-            c = UInt16(dictSize - 1)
+            c = UInt64(dictSize - 1)
             enlargeIn -= 1
         } else if c == 2 {
             return String(data: result, encoding: String.Encoding.utf16) ?? ""
