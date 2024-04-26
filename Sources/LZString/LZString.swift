@@ -24,7 +24,7 @@ private func getBaseValue(alphabet : String, char : Character) -> Int {
         return charcter
     } else {
         baseReserveDict[alphabet] = [Character:Int]()
-        for (index, char) in alphabet.characters.enumerated() {
+        for (index, char) in alphabet.enumerated() {
             baseReserveDict[alphabet]![char] = index
         }
 
@@ -132,7 +132,7 @@ public func compress(input: String) -> Data {
     }
 
     return _compress(input: input, bitPerChar: 16, charFromInt: { a in
-        return Data(bytes: [UInt8(a % 256), UInt8(a >> 8)])
+        return Data([UInt8(a % 256), UInt8(a >> 8)])
     })
 }
 
@@ -143,15 +143,15 @@ private func _compress<T : RangeReplaceableCollection>(input: String, bitPerChar
     }
 
     var value = 0
-    var wc = ""
-    var w = ""
+    var wc : [UInt16] = []
+    var w : [UInt16] = []
     var enlargeIn = 2
     var dictSize = 3
     var numBits = 2
-    var context = (dict: [String:Int](), dictCreate: [String:Bool](), data: T(), val: 0, position: 0)
+    var context = (dict: [[UInt16]:Int](), dictCreate: [[UInt16]:Bool](), data: T(), val: 0, position: 0)
 
-    for c in input {
-        let s = String(c)
+    for c in input.utf16 {
+        let s = [c]
 
         if context.dict.index(forKey: s) == nil {
             context.dict[s] = dictSize
@@ -165,7 +165,7 @@ private func _compress<T : RangeReplaceableCollection>(input: String, bitPerChar
             w = wc
         } else {
             if context.dictCreate.index(forKey: w) != nil {
-                if let scalar = w.unicodeScalars.first, scalar.value < 256 {
+                if w[0] < 256 {
                     for _ in 0..<numBits {
                         context.val <<= 1
 
@@ -178,7 +178,7 @@ private func _compress<T : RangeReplaceableCollection>(input: String, bitPerChar
                         }
                     }
 
-                    value = Int(w.unicodeScalars.first!.value)
+                    value = Int(w[0])
 
                     for _ in 0..<8 {
                         context.val = (context.val << 1) | (value & 1)
@@ -209,7 +209,7 @@ private func _compress<T : RangeReplaceableCollection>(input: String, bitPerChar
                         value = 0
                     }
 
-                    value = Int(w.unicodeScalars.first!.value)
+                    value = Int(w[0])
 
                     for _ in 0..<16 {
                         context.val = (context.val << 1) | (value & 1)
@@ -263,9 +263,9 @@ private func _compress<T : RangeReplaceableCollection>(input: String, bitPerChar
         }
     }
 
-    if w != "" {
+    if !w.isEmpty {
         if context.dictCreate.index(forKey: w) != nil {
-            if let scalar = w.unicodeScalars.first, scalar.value < 256 {
+            if w[0] < 256 {
                 for _ in 0..<numBits {
                     context.val <<= 1
 
@@ -278,7 +278,7 @@ private func _compress<T : RangeReplaceableCollection>(input: String, bitPerChar
                     }
                 }
 
-                value = Int(w.unicodeScalars.first!.value)
+                value = Int(w[0])
 
                 for _ in 0..<8 {
                     context.val = (context.val << 1) | (value & 1)
@@ -310,7 +310,7 @@ private func _compress<T : RangeReplaceableCollection>(input: String, bitPerChar
                     value = 0
                 }
 
-                value = Int(w.unicodeScalars.first!.value)
+                value = Int(w[0])
 
                 for _ in 0..<16 {
                     context.val = (context.val << 1) | (value & 1)
@@ -411,16 +411,16 @@ public func decompress(input: Data) -> String {
 }
 
 private func _decompress(length: Int, resetValue: Int, nextValue: @escaping GetNextValue) -> String {
-    var dict : [Int:String] = [0 : "\u{0}", 1 : "\u{1}", 2 : "\u{2}"]
+    var dict : [Int:[UInt16]] = [0 : [0], 1 : [1], 2 : [2]]
     var next = 0
     var enlargeIn = 4
     var dictSize = 4
     var numBits = 3
     var bits = 0
-    var c = 0
-    var entry = ""
-    var w = ""
-    var result = ""
+    var c : UInt16 = 0
+    var entry : [UInt16] = []
+    var w : [UInt16] = []
+    var result = Data()
     var data = (value: nextValue(0), position: resetValue, index: 1)
 
     func _slide(data: inout DecompressData, maxpower: Int) -> Int {
@@ -449,17 +449,19 @@ private func _decompress(length: Int, resetValue: Int, nextValue: @escaping GetN
 
     if next == 0 {
         bits = _slide(data: &data, maxpower: 2 << 7)
-        c = bits
+        c = UInt16(bits)
     } else if next == 1 {
         bits = _slide(data: &data, maxpower: 2 << 15)
-        c = bits
+        c = UInt16(bits)
     } else if next == 2 {
         return ""
     }
 
-    w = String(Unicode.Scalar(c)!)
+    w = [c]
     dict[3] = w
-    result += w
+    result.append(contentsOf: w.flatMap({ value in
+        [UInt8(value >> 8), UInt8(value & 0x00ff)]
+    }))
 
     while true {
         guard data.index <= length else {
@@ -467,22 +469,22 @@ private func _decompress(length: Int, resetValue: Int, nextValue: @escaping GetN
         }
 
         bits = _slide(data: &data, maxpower: 2 << (numBits - 1))
-        c = bits
+        c = UInt16(bits)
 
         if c == 0 {
             bits = _slide(data: &data, maxpower: 2 << 7)
-            dict[dictSize] = String(getCharFromInt(bits))
+            dict[dictSize] = [UInt16(bits)]
             dictSize += 1
-            c = dictSize - 1
+            c = UInt16(dictSize - 1)
             enlargeIn -= 1
         } else if c == 1 {
             bits = _slide(data: &data, maxpower: 2 << 15)
-            dict[dictSize] = String(getCharFromInt(bits))
+            dict[dictSize] = [UInt16(bits)]
             dictSize += 1
-            c = dictSize - 1
+            c = UInt16(dictSize - 1)
             enlargeIn -= 1
         } else if c == 2 {
-            return result
+            return String(data: result, encoding: String.Encoding.utf16) ?? ""
         }
 
         if enlargeIn == 0 {
@@ -490,18 +492,24 @@ private func _decompress(length: Int, resetValue: Int, nextValue: @escaping GetN
             numBits += 1
         }
 
-        if let e = dict[c] {
+        if let e = dict[Int(c)] {
             entry = e
         } else {
             if c == dictSize {
-                entry = w + String(w[0])
+                var tmp = Array(w)
+                tmp.append(entry[0])
+                entry = tmp
             } else {
                 return ""
             }
         }
 
-        result += entry
-        dict[dictSize] = w + String(entry[0])
+        result.append(contentsOf: entry.flatMap({ value in
+            [UInt8(value >> 8), UInt8(value & 0x00ff)]
+        }))
+        var tmp = Array(w)
+        tmp.append(entry[0])
+        dict[dictSize] = tmp
         dictSize += 1
         enlargeIn -= 1
         w = entry
@@ -515,12 +523,12 @@ private func _decompress(length: Int, resetValue: Int, nextValue: @escaping GetN
 
 extension String {
     subscript(pos: Int) -> Character {
-        return self[String.Index(encodedOffset: pos)]
+        return self[String.Index(utf16Offset: pos, in: self)]
     }
 }
 
 extension String.UTF16View {
     subscript(pos: Int) -> Unicode.UTF16.CodeUnit {
-        return self[String.UTF16View.Index(encodedOffset: pos)]
+        return self[String.UTF16View.Index(utf16Offset: pos, in: String(self))]
     }
 }
