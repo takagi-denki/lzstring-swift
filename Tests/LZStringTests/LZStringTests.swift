@@ -113,6 +113,56 @@ class LZStringTests: XCTestCase {
         XCTAssertEqual(decompress, LZStringTests.text)
     }
 
+    func testCompressEmpty() {
+        let compress : Data = LZString.compress(input: "")
+        XCTAssertEqual(compress, Data())
+    }
+
+    func testDecompressEmpty() {
+        let decompress = LZString.decompress(input: Data())
+        XCTAssertEqual(decompress, "")
+    }
+
+    func testCompressUTF16Empty() {
+        let compress = LZString.compressToUTF16(input: "")
+        XCTAssertEqual(compress, "")
+    }
+
+    func testDecompressUTF16Empty() {
+        let decompress = LZString.decompressFromUTF16(input: "")
+        XCTAssertEqual(decompress, "")
+    }
+
+    func testCompressBase64Empty() {
+        let compress = LZString.compressToBase64(input: "")
+        XCTAssertEqual(compress, "")
+    }
+
+    func testDecompressBase64Empty() {
+        let decompress = LZString.decompressFromBase64(input: "")
+        XCTAssertEqual(decompress, "")
+    }
+
+    func testCompressUriEmpty() {
+        let compress = LZString.compressToEncodedURIComponent(input: "")
+        XCTAssertEqual(compress, "")
+    }
+
+    func testDecompressUriEmpty() {
+        let decompress = LZString.decompressFromEncodedURIComponent(input: "")
+        XCTAssertEqual(decompress, "")
+    }
+
+    func testCompressUInt8Empty() {
+        let compress = LZString.compressToUInt8Array(input: "")
+        XCTAssertEqual(compress, [])
+    }
+
+    func testDecompressUInt8Empty() {
+        let decompress = LZString.decompressFromUInt8Array(input: [])
+        XCTAssertEqual(decompress, "")
+    }
+
     static var allTests = [
         ("testCompress", testCompress),
         ("testEmojiCompress", testEmojiCompress),
@@ -128,5 +178,15 @@ class LZStringTests: XCTestCase {
         ("testDecompressBase64", testDecompressBase64),
         ("testDecompressUri", testDecompressUri),
         ("testDecompressUInt8Array", testDecompressUInt8Array),
+        ("testCompressEmpty", testCompressEmpty),
+        ("testDecompressEmpty", testDecompressEmpty),
+        ("testCompressUTF16Empty", testCompressUTF16Empty),
+        ("testDecompressUtf16", testDecompressUtf16),
+        ("testCompressBase64Empty", testCompressBase64Empty),
+        ("testDecompressBase64Empty", testDecompressBase64Empty),
+        ("testCompressUriEmpty", testCompressUriEmpty),
+        ("testDecompressUriEmpty", testDecompressUriEmpty),
+        ("testCompressUInt8Empty", testCompressUInt8Empty),
+        ("testDecompressUInt8Empty", testDecompressUInt8Empty),
     ]
 }
