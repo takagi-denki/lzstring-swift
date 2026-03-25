@@ -1,0 +1,64 @@
+name: Build
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'Sources/**'
+      - 'Package.swift'
+      - 'Package.resolved'
+      - '.github/workflows/**'
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'Sources/**'
+      - 'Package.swift'
+      - 'Package.resolved'
+      - '.github/workflows/**'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    # macOS と Linux は既存のアクションを利用
+    - name: Setup Swift (macOS / Linux)
+      if: runner.os != 'Windows'
+      uses: swift-actions/setup-swift@v2
+      with:
+        swift-version: '6.2'
+
+    # Windows 環境専用のセットアップアクション
+    - name: Setup Swift (Windows)
+      if: runner.os == 'Windows'
+      uses: sushichop/gha-swift-env@v1
+      with:
+        swift-version: '6.2'
+
+    - name: Build Library
+      run: swift build
+
+  build-musl:
+      runs-on: ubuntu-latest
+    
+      steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Swift
+        uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: '6.2'
+
+      - name: Install Static Linux SDK for musl
+        run: swift sdk install https://download.swift.org/swift-6.2-release/static-sdk/swift-6.2-RELEASE/swift-6.2-RELEASE_static-linux-0.0.1.artifactbundle.tar.gz --checksum d2225840e592389ca517bbf71652f7003dbf45ac35d1e57d98b9250368769378
+      
+      - name: Build Library for musl
+        run: swift build --swift-sdk x86_64-swift-linux-musl
