@@ -36,22 +36,31 @@ jobs:
 
     - name: Export Coverage
       run: |
-        # バイナリが配置されているディレクトリを取得
         BIN_PATH=$(swift build --show-bin-path)
         
-        # Linuxではテストは .xctest バンドルではなく、単一の実行ファイルとして生成されます。
-        # LZStringPackageTests という実行ファイルを検索してパスを特定します。
-        TEST_BINARY=$(find "$BIN_PATH" -maxdepth 1 -type f -executable -name "LZStringPackageTests" | head -n 1)
+        # ターゲット名（LZStringTests）に一致する実行ファイルを特定します。
+        # パッケージ構成によっては 'LZStringPackageTests' の場合もあるため、
+        # 'Tests' で終わる実行ファイルを動的に検索するのが最も確実です。
+        TEST_BINARY=$(find "$BIN_PATH" -maxdepth 1 -type f -executable -name "*Tests" | head -n 1)
         
         if [ -z "$TEST_BINARY" ]; then
           echo "Error: Test binary not found in $BIN_PATH"
+          # デバッグ用にディレクトリの中身を表示
+          ls -l "$BIN_PATH"
           exit 1
         fi
 
+        echo "Found test binary: $TEST_BINARY"
+
         LLVM_COV="$(dirname "$(which swift)")/llvm-cov"
         
-        # 特定した実行ファイルパスを使用してレポートを生成
-        "$LLVM_COV" export -format="lcov" "$TEST_BINARY" -instr-profile="$BIN_PATH/codecov/default.profdata" > coverage.lcov
+        # カバレッジデータ (.profdata) のパスを確認
+        PROFDATA="$BIN_PATH/codecov/default.profdata"
+        if [ ! -f "$PROFDATA" ]; then
+          PROFDATA=$(find "$BIN_PATH" -name "default.profdata" | head -n 1)
+        fi
+        
+        "$LLVM_COV" export -format="lcov" "$TEST_BINARY" -instr-profile="$PROFDATA" > coverage.lcov
         
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v4
