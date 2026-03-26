@@ -4,14 +4,13 @@ private let keyStrBase64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz
 private let keyStrUriSafe = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-$"
 
 // FIXME: throw error if invalid unicode
-private let getCharFromInt : (Int) -> Character = { a in
+private func getCharFromInt(_ a: Int) -> Character {
     if let scalar = Unicode.Scalar(a) {
         return Character(scalar)
     } else {
         return Character("")
-//        return Character(Unicode.Scalar(65533)!)
-    } }
-private var baseReserveDict = [String:[Character:Int]]()
+    }
+}
 
 private typealias GetCharFromInt<T> = (Int) -> T
 private typealias GetNextValue = (Int) -> Int
@@ -19,17 +18,11 @@ private typealias GetNextValue = (Int) -> Int
 private typealias DecompressData = (value: Int, position: Int, index: Int)
 private typealias CompressContext<T> = (dict: [String:Int], dictCreate: [String:Bool], data: T, val: Int, position: Int) where T : RangeReplaceableCollection
 
-private func getBaseValue(alphabet : String, char : Character) -> Int {
-    if let charcter =  baseReserveDict[alphabet]?[char] {
-        return charcter
-    } else {
-        baseReserveDict[alphabet] = [Character:Int]()
-        for (index, char) in alphabet.enumerated() {
-            baseReserveDict[alphabet]![char] = index
-        }
-
-        return baseReserveDict[alphabet]![char]!
+private func getBaseValue(alphabet: String, char: Character) -> Int {
+     if let index = alphabet.firstIndex(of: char) {
+        return alphabet.distance(from: alphabet.startIndex, to: index)
     }
+    return 0
 }
 
 public func compressToBase64(input: String) -> String {

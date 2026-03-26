@@ -1,0 +1,72 @@
+name: Test
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'Sources/**'
+      - 'Tests/**'
+      - 'Package.swift'
+      - 'Package.resolved'
+      - '.github/workflows/**'
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'Sources/**'
+      - 'Tests/**'
+      - 'Package.swift'
+      - 'Package.resolved'
+      - '.github/workflows/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Swift
+      uses: swift-actions/setup-swift@v2
+      with:
+        swift-version: '6.2'
+
+    - name: Run Tests
+      run: swift test --enable-code-coverage
+
+    - name: Export Coverage
+      run: |
+        BIN_PATH=$(swift build --show-bin-path)
+        
+        # ログから確認されたバイナリ名を直接指定します
+        TEST_BINARY="$BIN_PATH/LZStringPackageTests.xctest"
+        
+        if [ ! -f "$TEST_BINARY" ]; then
+          echo "Error: Test binary not found at $TEST_BINARY"
+          exit 1
+        fi
+
+        echo "Found test binary: $TEST_BINARY"
+
+        LLVM_COV="$(dirname "$(which swift)")/llvm-cov"
+        
+        # プロファイルデータの場所を特定
+        PROFDATA="$BIN_PATH/codecov/default.profdata"
+        
+        # LCOV形式でエクスポート
+        "$LLVM_COV" export -format="lcov" "$TEST_BINARY" -instr-profile="$PROFDATA" > coverage.lcov
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        files: ./coverage.lcov
+        fail_ci_if_error: true
+        
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        files: ./coverage.lcov
+        fail_ci_if_error: true
+        verbose: true
