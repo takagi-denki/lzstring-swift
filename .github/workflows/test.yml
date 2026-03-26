@@ -37,7 +37,7 @@ jobs:
     - name: Export Coverage
       run: |
         BIN_PATH=$(swift build --show-bin-path)
-        XCTEST_PATH="$BIN_PATH/LZStringPackageTests.xctest/Contents/MacOS/LZStringPackageTests"        
+        XCTEST_PATH="$BIN_PATH/LZStringPackageTests"        
         LLVM_COV="$(dirname "$(which swift)")/llvm-cov"        
         "$LLVM_COV" export -format="lcov" "$XCTEST_PATH" -instr-profile="$BIN_PATH/codecov/default.profdata" > coverage.lcov
 
