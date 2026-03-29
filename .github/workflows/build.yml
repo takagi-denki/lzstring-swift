@@ -43,7 +43,7 @@ jobs:
         swift-version: '6.2'
 
     - name: Build Library
-      run: swift build
+      run: swift build --target LZString
 
   build-musl:
       runs-on: ubuntu-latest
@@ -61,4 +61,4 @@ jobs:
         run: swift sdk install https://download.swift.org/swift-6.2-release/static-sdk/swift-6.2-RELEASE/swift-6.2-RELEASE_static-linux-0.0.1.artifactbundle.tar.gz --checksum d2225840e592389ca517bbf71652f7003dbf45ac35d1e57d98b9250368769378
       
       - name: Build Library for musl
-        run: swift build --swift-sdk x86_64-swift-linux-musl
+        run: swift build --target LZString --swift-sdk x86_64-swift-linux-musl
