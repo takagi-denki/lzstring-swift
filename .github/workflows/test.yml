@@ -31,6 +31,11 @@ jobs:
       with:
         swift-version: '6.2'
 
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libjemalloc-dev
+
     - name: Run Tests
       run: swift test --enable-code-coverage
 
