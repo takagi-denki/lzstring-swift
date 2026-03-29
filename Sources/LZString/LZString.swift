@@ -111,7 +111,7 @@ public func decompressFromEncodedURIComponent(input: String) -> String {
 
     let replaced = input.replacingOccurrences(of: " ", with: "+")
 
-    return _decompress(length: replaced.count, resetValue: 32, nextValue: { a in getBaseValue(alphabet: keyStrUriSafeArray, char: input[a]) })
+    return _decompress(length: replaced.count, resetValue: 32, nextValue: { a in getBaseValue(alphabet: keyStrUriSafeArray, char: replaced[a]) })
 }
 
 public func compress(input: String) -> String {
