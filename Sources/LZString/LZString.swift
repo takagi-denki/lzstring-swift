@@ -8,7 +8,7 @@ private func getCharFromInt(_ a: Int) -> Character {
     if let scalar = Unicode.Scalar(a) {
         return Character(scalar)
     } else {
-        return Character("")
+        return Character("\u{FFFD}")
     }
 }
 
