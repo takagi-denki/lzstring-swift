@@ -492,8 +492,12 @@ private func _decompress(length: Int, resetValue: Int, nextValue: @escaping GetN
             entry = e
         } else {
             if c == dictSize {
+                // LZW の KwKwK ケース。直前の語 w に w 自身の先頭を足したものが正解で、
+                // entry は前回の反復の値（初回は空）なので参照してはいけない。
+                // LZW KwKwK case: the entry is w + w[0]; `entry` still holds the
+                // previous iteration's value (empty on the first pass).
                 var tmp = Array(w)
-                tmp.append(entry[0])
+                tmp.append(w[0])
                 entry = tmp
             } else {
                 return ""
