@@ -46,7 +46,7 @@ swift package --allow-writing-to-package-directory benchmark baseline check <nam
 - 内部は UTF-16 コードユニット単位で動く（`input.utf16`、`[UInt16]` の辞書キー）。`Character` や `String.Index` 単位に置き換えると絵文字などサロゲートペアで JS との互換性が壊れる。
 - `_compress` の本体ループと末尾処理には**意図的に重複した**ビット出力コードがある。オリジナル JS の構造をそのまま写したもので、読みやすさのための安易なリファクタよりも互換性とインライン性能を優先している。
 - `keyStrBase64Array` / `keyStrUriSafeArray` は ASCII コードを添字にする 256 要素のルックアップテーブル（性能最適化、commit `8cde82f`）。アルファベットを変えるときは文字列と配列の両方を更新する。
-- `_decompress` は UTF-16 LE のバイト列を `Data` に組み立てて最後に `String(data:encoding:.utf16)` で復元する。
+- `_decompress` は UTF-16 **ビッグエンディアン**のバイト列（上位バイトが先: `[UInt8(value >> 8), UInt8(value & 0x00ff)]`）を `Data` に組み立て、最後に `String(data:encoding:.utf16)` で復元する。`.utf16` は BOM を解釈し、BOM がなければビッグエンディアンとして扱う。バイト順を入れ替えると復号結果が壊れる。
 
 ## スタイル / Style
 
