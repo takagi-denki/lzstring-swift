@@ -415,7 +415,12 @@ private func _decompress(length: Int, resetValue: Int, nextValue: @escaping GetN
     var c : UInt64 = 0
     var entry : [UInt64] = []
     var w : [UInt64] = []
-    var result = Data()
+    // 復号結果は UTF-16 コードユニットのまま貯める。バイト列に落として
+    // String(data:encoding:.utf16) で復元すると、先頭の U+FEFF / U+FFFE が
+    // BOM として解釈されて失われる (issue #23)。
+    // Accumulate UTF-16 code units directly: going through bytes and
+    // String(data:encoding:.utf16) makes a leading U+FEFF / U+FFFE be eaten as a BOM.
+    var result : [UInt16] = []
     // position = 0 は「バッファが空」を意味する。最初の読み出しは _slide まで遅延させ、
     // 入力長が 0 のときに範囲外アクセスが起きないようにする。
     // position = 0 means "buffer empty"; the first read is deferred to _slide so that
@@ -477,9 +482,7 @@ private func _decompress(length: Int, resetValue: Int, nextValue: @escaping GetN
 
     w = [c]
     dict[3] = w
-    result.append(contentsOf: w.flatMap({ value in
-        [UInt8(value >> 8), UInt8(value & 0x00ff)]
-    }))
+    result.append(contentsOf: w.map({ UInt16($0) }))
 
     while true {
         // 入力の枯渇は _slide が検出する。
@@ -509,7 +512,7 @@ private func _decompress(length: Int, resetValue: Int, nextValue: @escaping GetN
             c = UInt64(dictSize - 1)
             enlargeIn -= 1
         } else if c == 2 {
-            return String(data: result, encoding: String.Encoding.utf16) ?? ""
+            return String(decoding: result, as: UTF16.self)
         }
 
         if enlargeIn == 0 {
@@ -533,9 +536,7 @@ private func _decompress(length: Int, resetValue: Int, nextValue: @escaping GetN
             }
         }
 
-        result.append(contentsOf: entry.flatMap({ value in
-            [UInt8(value >> 8), UInt8(value & 0x00ff)]
-        }))
+        result.append(contentsOf: entry.map({ UInt16($0) }))
         var tmp = Array(w)
         tmp.append(entry[0])
         dict[dictSize] = tmp
