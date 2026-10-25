@@ -412,26 +412,39 @@ private func _decompress(length: Int, resetValue: Int, nextValue: @escaping GetN
     var enlargeIn = 4
     var dictSize = 4
     var numBits = 3
-    var bits = 0
     var c : UInt64 = 0
     var entry : [UInt64] = []
     var w : [UInt64] = []
     var result = Data()
-    var data = (value: nextValue(0), position: resetValue, index: 1)
+    // position = 0 は「バッファが空」を意味する。最初の読み出しは _slide まで遅延させ、
+    // 入力長が 0 のときに範囲外アクセスが起きないようにする。
+    // position = 0 means "buffer empty"; the first read is deferred to _slide so that
+    // a zero-length input never indexes out of bounds.
+    var data = (value: 0, position: 0, index: 0)
 
-    func _slide(data: inout DecompressData, maxpower: Int) -> Int {
+    /// 要求されたビット数を読み出す。入力が尽きている場合は nil を返す。
+    /// Reads `maxpower` worth of bits, or returns nil when the input is exhausted.
+    func _slide(data: inout DecompressData, maxpower: Int) -> Int? {
         var bits = 0
         var power = 1
 
         while power != maxpower {
-            let resb = data.value & data.position
-            data.position >>= 1
-
+            // 補充は実際に必要になった時点で行う。末尾ちょうどで終わる正常な入力では
+            // 余分な読み出しが発生しない。
+            // Refill only when a bit is actually needed, so a stream that ends exactly
+            // on a buffer boundary never triggers a read past the end.
             if data.position == 0 {
+                guard data.index < length else {
+                    return nil
+                }
+
                 data.position = resetValue
                 data.value = nextValue(data.index)
                 data.index += 1
             }
+
+            let resb = data.value & data.position
+            data.position >>= 1
 
             bits |= (resb > 0 ? 1 : 0) * power
             power <<= 1
@@ -440,15 +453,24 @@ private func _decompress(length: Int, resetValue: Int, nextValue: @escaping GetN
         return bits
     }
 
-    bits = _slide(data: &data, maxpower: 2 << 1)
-    next = bits
+    guard let header = _slide(data: &data, maxpower: 2 << 1) else {
+        return ""
+    }
+
+    next = header
 
     if next == 0 {
-        bits = _slide(data: &data, maxpower: 2 << 7)
-        c = UInt64(bits)
+        guard let literal = _slide(data: &data, maxpower: 2 << 7) else {
+            return ""
+        }
+
+        c = UInt64(literal)
     } else if next == 1 {
-        bits = _slide(data: &data, maxpower: 2 << 15)
-        c = UInt64(bits)
+        guard let literal = _slide(data: &data, maxpower: 2 << 15) else {
+            return ""
+        }
+
+        c = UInt64(literal)
     } else if next == 2 {
         return ""
     }
@@ -460,22 +482,29 @@ private func _decompress(length: Int, resetValue: Int, nextValue: @escaping GetN
     }))
 
     while true {
-        guard data.index <= length else {
+        // 入力の枯渇は _slide が検出する。
+        // Exhaustion is detected by _slide itself.
+        guard let code = _slide(data: &data, maxpower: 2 << (numBits - 1)) else {
             return ""
         }
 
-        bits = _slide(data: &data, maxpower: 2 << (numBits - 1))
-        c = UInt64(bits)
+        c = UInt64(code)
 
         if c == 0 {
-            bits = _slide(data: &data, maxpower: 2 << 7)
-            dict[dictSize] = [UInt64(bits)]
+            guard let literal = _slide(data: &data, maxpower: 2 << 7) else {
+                return ""
+            }
+
+            dict[dictSize] = [UInt64(literal)]
             dictSize += 1
             c = UInt64(dictSize - 1)
             enlargeIn -= 1
         } else if c == 1 {
-            bits = _slide(data: &data, maxpower: 2 << 15)
-            dict[dictSize] = [UInt64(bits)]
+            guard let literal = _slide(data: &data, maxpower: 2 << 15) else {
+                return ""
+            }
+
+            dict[dictSize] = [UInt64(literal)]
             dictSize += 1
             c = UInt64(dictSize - 1)
             enlargeIn -= 1
