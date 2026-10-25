@@ -421,9 +421,16 @@ public func decompress(input: Data) -> String {
         return ""
     }
 
+    // Data はスライスすると startIndex が 0 から始まらない（dropFirst、パケットの
+    // ヘッダー除去など）。0 始まりを前提に添字アクセスすると範囲外になるため、
+    // startIndex からの相対位置で読む。コピーは不要。
+    // A sliced Data does not start at index 0, so offsets are taken relative to
+    // startIndex rather than assuming zero-based indices. No copy required.
+    let start = input.startIndex
+
     return _decompress(length: input.count / 2, resetValue: 32768, nextValue: {i in
-        let lower = Int(input[i * 2])
-        let upper = Int(input[i * 2 + 1])  * 256
+        let lower = Int(input[start + i * 2])
+        let upper = Int(input[start + i * 2 + 1])  * 256
         return upper + lower
     })
 }
