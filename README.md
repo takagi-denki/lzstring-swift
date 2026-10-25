@@ -34,7 +34,7 @@ Add the package to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/takagi-denki/lzstring-swift.git", from: "1.1.0"),
+    .package(url: "https://github.com/takagi-denki/lzstring-swift.git", from: "1.2.0"),
 ]
 ```
 
@@ -140,6 +140,8 @@ LZString.decompressFromEncodedURIComponent("BIUwNmD2A0AEDqkBOYAmBCIA")
 ```
 
 The reverse works too — pass a string produced by `lz-string` to the matching `decompressFrom…` function.
+
+An empty string compresses to a *non-empty* payload, exactly as in the original: `compressToBase64("")` is `"Q==="`, not `""`. Releases before 1.2.0 returned an empty string here, so compressed output of an empty input differs between those versions. Decompressing either form still yields `""`.
 
 ## Caveats
 
