@@ -114,6 +114,18 @@ public func decompressFromEncodedURIComponent(input: String) -> String {
     return _decompress(length: replaced.count, resetValue: 32, nextValue: { a in getBaseValue(alphabet: keyStrUriSafeArray, char: replaced[a]) })
 }
 
+/// 生の 16 ビットストリームをそのまま `String` として返す。
+///
+/// - Warning: この形式は**不可逆**です。圧縮結果には対になっていない UTF-16 サロゲート
+///   コードユニットが含まれることがあり、Swift の `String` はそれを表現できないため
+///   `U+FFFD` に置換されてデータが失われます。可逆な形式を使ってください。
+///
+/// Returns the raw 16-bit stream as a `String`.
+///
+/// - Warning: This format is **lossy**. The stream can contain unpaired UTF-16 surrogate
+///   code units, which a Swift `String` cannot represent; they are replaced with `U+FFFD`
+///   and the data is destroyed. Use one of the lossless formats instead.
+@available(*, deprecated, message: "Lossy: the raw 16-bit stream can contain unpaired surrogates, which a Swift String cannot represent. Use compress(input:) -> Data, compressToUInt8Array(input:), or compressToUTF16(input:).")
 public func compress(input: String) -> String {
     guard !input.isEmpty else {
         return ""
@@ -386,6 +398,16 @@ private func _compress<T : RangeReplaceableCollection>(input: String, bitPerChar
     return context.data
 }
 
+/// 生の 16 ビットストリームを `String` から展開する。
+///
+/// - Warning: 対になる `compress(input:) -> String` が不可逆なため、この形式で往復させると
+///   データが失われることがあります。可逆な形式を使ってください。
+///
+/// Decompresses the raw 16-bit stream from a `String`.
+///
+/// - Warning: Its counterpart `compress(input:) -> String` is lossy, so a round trip through
+///   this format can lose data. Use one of the lossless formats instead.
+@available(*, deprecated, message: "Lossy counterpart of the deprecated compress(input:) -> String. Use decompress(input: Data), decompressFromUInt8Array(input:), or decompressFromUTF16(input:).")
 public func decompress(input: String) -> String {
     guard !input.isEmpty else {
         return ""

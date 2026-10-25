@@ -24,6 +24,7 @@ struct TruncatedInputTests {
     }
 
     @Test("不完全・不正な入力は全形式で空文字列を返す")
+    @available(*, deprecated, message: "生 String 形式 (#22) の検証を含む")
     func malformedInputReturnsEmptyString() {
         #expect(LZString.decompressFromBase64(input: "A") == "")
         #expect(LZString.decompressFromBase64(input: "!!!!") == "")

@@ -39,6 +39,8 @@ swift package --allow-writing-to-package-directory benchmark baseline check <nam
   let data: Data = LZString.compress(input: text)
   blackHole(LZString.compress(input: text) as Data)
   ```
+- 生の `String` 形式（`compress(input:) -> String` と `decompress(input: String)`）は**非推奨**。生の 16 ビットストリームには対になっていないサロゲートが現れることがあり、Swift の `String` はそれを表現できず `U+FFFD` に置換されるため不可逆（issue #22）。可逆な形式は `Data` / `[UInt8]` / `compressToUTF16`。
+  - パッケージ内でこの形式を意図的に使っている箇所（テストとベンチマーク）は、囲む宣言に `@available(*, deprecated)` を付けて警告を抑えている。Swift には警告抑制のプラグマがないため、ベンチマークの呼び出し 1 箇所だけは警告が残る（意図的）。
 - 公開 API を追加・変更したら、Base64 / UTF16 / URI / UInt8Array / Data / String の各経路にテストとベンチマークの両方を追加する。
 
 ## 実装上の注意 / Implementation notes

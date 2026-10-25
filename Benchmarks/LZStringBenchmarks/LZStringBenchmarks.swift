@@ -16,7 +16,6 @@ let benchmarks: @Sendable () -> Void = {
     // 展開のベンチマーク用に事前に圧縮データを生成
     // Pre-calculate compressed data for decompression benchmarks
     let compressedData: Data = LZString.compress(input: text)
-    let compressedString: String = LZString.compress(input: text)
     let compressedBase64 = LZString.compressToBase64(input: text)
     let compressedUTF16 = LZString.compressToUTF16(input: text)
     let compressedUInt8Array = LZString.compressToUInt8Array(input: text)
@@ -50,16 +49,9 @@ let benchmarks: @Sendable () -> Void = {
     }
 
     // --- String ---
-    Benchmark("Compress (String)") { benchmark in
-        for _ in benchmark.scaledIterations {
-            blackHole(LZString.compress(input: text) as String)
-        }
-    }
-    Benchmark("Decompress (String)") { benchmark in
-        for _ in benchmark.scaledIterations {
-            blackHole(LZString.decompress(input: compressedString))
-        }
-    }
+    // 非推奨の生 String 形式 (#22)。削除するまでは計測対象として残す。
+    // The deprecated raw String format (#22) stays measured until it is removed.
+    registerDeprecatedStringBenchmarks(text: text)
 
     // --- Base64 ---
     Benchmark("Compress (Base64)") { benchmark in
@@ -106,6 +98,22 @@ let benchmarks: @Sendable () -> Void = {
     Benchmark("Decompress (URI)") { benchmark in
         for _ in benchmark.scaledIterations {
             blackHole(LZString.decompressFromEncodedURIComponent(input: compressedURI))
+        }
+    }
+}
+
+@available(*, deprecated, message: "Intentional: measures the deprecated raw String format (#22) until it is removed.")
+private func registerDeprecatedStringBenchmarks(text: String) {
+    let compressedString: String = LZString.compress(input: text)
+
+    Benchmark("Compress (String)") { benchmark in
+        for _ in benchmark.scaledIterations {
+            blackHole(LZString.compress(input: text) as String)
+        }
+    }
+    Benchmark("Decompress (String)") { benchmark in
+        for _ in benchmark.scaledIterations {
+            blackHole(LZString.decompress(input: compressedString))
         }
     }
 }
