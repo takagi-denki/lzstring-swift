@@ -50,10 +50,11 @@ struct LZStringTests {
         let expectedUtf16 = try String(contentsOf: url, encoding: .utf16LittleEndian)
         
         let compressed = LZString.compressToUTF16(input: Self.text)
-        #expect(compressed == expectedUtf16)
+        // String の == は正規等価で比較するため、UTF-16 コードユニット列で突き合わせる (issue #40)。
+        #expect(Array(compressed.utf16) == Array(expectedUtf16.utf16))
         
         let decompressed = LZString.decompressFromUTF16(input: compressed)
-        #expect(decompressed == Self.text)
+        #expect(Array(decompressed.utf16) == Array(Self.text.utf16))
     }
 
     @Test("Base64形式の圧縮と展開")
