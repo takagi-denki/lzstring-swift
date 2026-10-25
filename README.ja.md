@@ -3,7 +3,7 @@
 [![Build](https://github.com/takagi-denki/lzstring-swift/actions/workflows/build.yml/badge.svg)](https://github.com/takagi-denki/lzstring-swift/actions/workflows/build.yml)
 [![Test](https://github.com/takagi-denki/lzstring-swift/actions/workflows/test.yml/badge.svg)](https://github.com/takagi-denki/lzstring-swift/actions/workflows/test.yml)
 [![codecov](https://codecov.io/github/takagi-denki/lzstring-swift/graph/badge.svg)](https://codecov.io/github/takagi-denki/lzstring-swift)
-[![License](https://img.shields.io/badge/License-WTFPL-lightgrey.svg)](http://www.wtfpl.net/)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE.txt)
 
 [English](README.md) | **日本語**
 
@@ -186,4 +186,6 @@ swift package benchmark         # ベンチマーク（jemalloc が必要）
 
 ## ライセンス
 
-[WTFPL](http://www.wtfpl.net/) — [LICENSE.txt](LICENSE.txt) を参照してください。
+[MIT](LICENSE.txt) — 本 Swift 移植版は、移植元の [lz-string](https://github.com/pieroxy/lz-string) と同じく MIT ライセンスで配布しています。移植元の著作権表示は [LICENSE.txt](LICENSE.txt) に保持しています。
+
+1.1.0 までのリリースは WTFPL で配布していました。その許諾を取り消すものではなく、本変更は以降の配布に適用されます。

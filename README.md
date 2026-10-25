@@ -3,7 +3,7 @@
 [![Build](https://github.com/takagi-denki/lzstring-swift/actions/workflows/build.yml/badge.svg)](https://github.com/takagi-denki/lzstring-swift/actions/workflows/build.yml)
 [![Test](https://github.com/takagi-denki/lzstring-swift/actions/workflows/test.yml/badge.svg)](https://github.com/takagi-denki/lzstring-swift/actions/workflows/test.yml)
 [![codecov](https://codecov.io/github/takagi-denki/lzstring-swift/graph/badge.svg)](https://codecov.io/github/takagi-denki/lzstring-swift)
-[![License](https://img.shields.io/badge/License-WTFPL-lightgrey.svg)](http://www.wtfpl.net/)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE.txt)
 
 **English** | [日本語](README.ja.md)
 
@@ -186,4 +186,6 @@ See [AGENTS.md](AGENTS.md) for the full contributor notes.
 
 ## License
 
-[WTFPL](http://www.wtfpl.net/) — see [LICENSE.txt](LICENSE.txt).
+[MIT](LICENSE.txt) — this Swift port is distributed under the MIT License, as is the original [lz-string](https://github.com/pieroxy/lz-string). The upstream copyright notice is preserved in [LICENSE.txt](LICENSE.txt).
+
+Releases up to and including 1.1.0 were distributed under the WTFPL. That grant is not revoked; this change applies to subsequent distributions.
