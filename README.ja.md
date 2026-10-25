@@ -14,7 +14,7 @@ pieroxy 氏による LZW ベースの文字列圧縮ライブラリ [lz-string](
 ## 特徴
 
 - **本家 JavaScript 版と互換。** 全形式について `lz-string` との一致を検証しています。
-- **6 つの出力形式** — Base64、URL セーフ、UTF-16、`[UInt8]`、`Data`、生の `String`。
+- **6 つの出力形式** — Base64、URL セーフ、UTF-16、`[UInt8]`、`Data`、生の `String`（非推奨）。
 - **サードパーティ依存なし。** ライブラリターゲットが import するのは `Foundation` のみです。
 - **Swift が動く環境で動く。** CI は macOS / Linux / Windows / static Linux (musl) でビルドしています。
 
@@ -34,7 +34,7 @@ pieroxy 氏による LZW ベースの文字列圧縮ライブラリ [lz-string](
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/takagi-denki/lzstring-swift.git", from: "1.0.0"),
+    .package(url: "https://github.com/takagi-denki/lzstring-swift.git", from: "1.1.0"),
 ]
 ```
 
@@ -76,7 +76,7 @@ let original = LZString.decompressFromBase64(input: compressed)
 | `compressToUTF16` / `decompressFromUTF16` | `String`（1 文字 15 ビット） | 118 文字（UTF-16 で 236 バイト） | `localStorage` など UTF-16 で保存する先に入れるとき |
 | `compressToUInt8Array` / `decompressFromUInt8Array` | `[UInt8]` | 220 バイト (39%) | JavaScript の `Uint8Array` に渡すとき |
 | `compress` / `decompress` | `Data` | 220 バイト (39%) | **最小。** ファイル・ソケット・DB に書くとき |
-| `compress` / `decompress` | `String` | — | ⚠️ Swift では不可逆 — [注意点](#注意点)を参照 |
+| `compress` / `decompress` | `String` | — | ⚠️ **非推奨** — Swift では不可逆、[注意点](#注意点)を参照 |
 
 ### Base64
 
@@ -143,9 +143,11 @@ LZString.decompressFromEncodedURIComponent("BIUwNmD2A0AEDqkBOYAmBCIA")
 
 ## 注意点
 
-### 生の `String` 形式は不可逆
+### 生の `String` 形式は非推奨
 
-`compress(input:) -> String` と `decompress(input: String)` は**往復できません**。生の 16 ビットストリームには対になっていないサロゲートコードユニットが現れることがあり、Swift の `String` はこれを表現できないため `U+FFFD` に置換されてデータが壊れます。
+`compress(input:) -> String` と `decompress(input: String)` は 1.1.0 で `@available(*, deprecated)` になりました。動作自体は変わらず、既存コードもビルドが通ります（警告が出るだけです）。
+
+この形式は**往復できません**。生の 16 ビットストリームには対になっていないサロゲートコードユニットが現れることがありますが、Swift の `String` は常に妥当な Unicode テキストであることが保証される型のため、これを保持できず `U+FFFD` に置換されてデータが壊れます。これは型の性質であり、修正可能な不具合ではありません。JavaScript の文字列は UTF-16 コードユニットの列なので孤立サロゲートを保持できますが、Swift の `String` にはできません。
 
 可逆性が必要な場合は `Data`、`[UInt8]`、`compressToUTF16` を使ってください。[#22](https://github.com/takagi-denki/lzstring-swift/issues/22) を参照。
 

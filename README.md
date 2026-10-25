@@ -14,7 +14,7 @@ The output is byte-for-byte identical to the original JavaScript implementation,
 ## Features
 
 - **Compatible with the JavaScript original.** Verified against `lz-string` for every format.
-- **Six output formats** — Base64, URL-safe, UTF-16, `[UInt8]`, `Data`, and raw `String`.
+- **Six output formats** — Base64, URL-safe, UTF-16, `[UInt8]`, `Data`, and raw `String` (deprecated).
 - **No third-party dependencies.** The library target imports only `Foundation`.
 - **Runs everywhere Swift does.** CI builds on macOS, Linux, Windows, and the static Linux musl SDK.
 
@@ -34,7 +34,7 @@ Add the package to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/takagi-denki/lzstring-swift.git", from: "1.0.0"),
+    .package(url: "https://github.com/takagi-denki/lzstring-swift.git", from: "1.1.0"),
 ]
 ```
 
@@ -76,7 +76,7 @@ Sizes below are for a 570-byte ASCII sample (`"Lorem ipsum dolor sit amet, conse
 | `compressToUTF16` / `decompressFromUTF16` | `String` (15 bits per character) | 118 chars (236 bytes as UTF-16) | You store into a UTF-16 store such as `localStorage` |
 | `compressToUInt8Array` / `decompressFromUInt8Array` | `[UInt8]` | 220 bytes (39%) | You hand the bytes to a JavaScript `Uint8Array` |
 | `compress` / `decompress` | `Data` | 220 bytes (39%) | **Most compact.** Writing to a file, a socket, or a database |
-| `compress` / `decompress` | `String` | — | ⚠️ Lossy in Swift — see [Caveats](#caveats) |
+| `compress` / `decompress` | `String` | — | ⚠️ **Deprecated** — lossy in Swift, see [Caveats](#caveats) |
 
 ### Base64
 
@@ -143,11 +143,13 @@ The reverse works too — pass a string produced by `lz-string` to the matching 
 
 ## Caveats
 
-### The raw `String` format is lossy
+### The raw `String` format is deprecated
 
-`compress(input:) -> String` and `decompress(input: String)` are **not** round-trip safe. The raw 16-bit stream can contain unpaired surrogate code units, which a Swift `String` cannot represent; they are replaced with `U+FFFD` and the data is destroyed.
+`compress(input:) -> String` and `decompress(input: String)` are marked `@available(*, deprecated)` as of 1.1.0. They still work and existing code still builds — you will just get a warning.
 
-Use `Data`, `[UInt8]`, or `compressToUTF16` instead when you need a lossless result. See [#22](https://github.com/takagi-denki/lzstring-swift/issues/22).
+They are **not** round-trip safe. The raw 16-bit stream can contain unpaired surrogate code units, and a Swift `String` is guaranteed to be valid Unicode text, so it cannot hold them; they are replaced with `U+FFFD` and the data is destroyed. This is a property of the type, not a bug that can be fixed — a JavaScript string is a sequence of UTF-16 code units and can hold a lone surrogate, but a Swift `String` cannot.
+
+Use `Data`, `[UInt8]`, or `compressToUTF16` when you need a lossless result. See [#22](https://github.com/takagi-denki/lzstring-swift/issues/22).
 
 ### Malformed input does not throw
 
