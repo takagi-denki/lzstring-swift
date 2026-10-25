@@ -41,6 +41,11 @@ struct TruncatedInputTests {
         #expect(LZString.decompress(input: Data([0x01])) == "")
     }
 
+    /// この payload が復号できる最小長。パディングと未使用の末尾ビットを
+    /// 取り除いてもストリームとしては完結しているため、全長より短くても復号できる。
+    /// マジックナンバーではなく、実測した境界として名前を付けている (issue #42)。
+    static let smallestDecodablePrefix = 70
+
     /// 正常な圧縮データのあらゆる切り詰めを試す。
     /// 1 つでもトラップすればテストプロセスごと落ちるため、これ自体が回帰検出になる。
     @Test("あらゆる長さに切り詰めた入力で落ちない")
@@ -49,11 +54,22 @@ struct TruncatedInputTests {
             let truncated = String(Self.validBase64.prefix(length))
             let decoded = LZString.decompressFromBase64(input: truncated)
 
-            // 末尾のパディング分を除けば本家と同じく全文が復元できる。
-            if length >= 70 {
-                #expect(decoded == Self.text)
-            }
+            // 切り詰めた入力は「全文復元」か「空文字列」のどちらかで、
+            // 途中まで復号された壊れたテキストは返さない。
+            #expect(decoded.isEmpty || decoded == Self.text,
+                    "length=\(length): 部分的な結果 \(decoded.debugDescription)")
+
+            // 境界が実測値どおりであること。
+            #expect((decoded == Self.text) == (length >= Self.smallestDecodablePrefix),
+                    "length=\(length): 境界の想定が崩れている")
         }
+    }
+
+    /// 復号が成立する境界そのものを明示的に固定する。
+    @Test("復号が成立する最小長の境界")
+    func decodingBoundaryIsPinned() {
+        #expect(LZString.decompressFromBase64(input: String(Self.validBase64.prefix(Self.smallestDecodablePrefix))) == Self.text)
+        #expect(LZString.decompressFromBase64(input: String(Self.validBase64.prefix(Self.smallestDecodablePrefix - 1))) == "")
     }
 
     /// 入力の末尾ちょうどでビットを使い切る正常な入力が、
