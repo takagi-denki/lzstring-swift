@@ -29,10 +29,6 @@ private func getBaseValue(alphabet: [Int], char: Character) -> Int {
 }
 
 public func compressToBase64(input: String) -> String {
-    guard !input.isEmpty else {
-        return ""
-    }
-
     let result = _compress(input: input, bitPerChar: 6, charFromInt: { a in String(keyStrBase64[a])})
     switch result.count % 4 {
     case 0:
@@ -57,10 +53,6 @@ public func decompressFromBase64(input: String) -> String {
 }
 
 public func compressToUTF16(input: String) -> String {
-    guard !input.isEmpty else {
-        return ""
-    }
-
     return _compress(input: input, bitPerChar: 15, charFromInt: { a in String(getCharFromInt(a + 32))}) + " "
 }
 
@@ -97,10 +89,6 @@ public func decompressFromUInt8Array(input: [UInt8]) -> String {
 }
 
 public func compressToEncodedURIComponent(input: String) -> String {
-    guard !input.isEmpty else {
-        return ""
-    }
-
     return _compress(input: input, bitPerChar: 6, charFromInt: { i in String(keyStrUriSafe[i])})
 }
 
@@ -127,18 +115,10 @@ public func decompressFromEncodedURIComponent(input: String) -> String {
 ///   and the data is destroyed. Use one of the lossless formats instead.
 @available(*, deprecated, message: "Lossy: the raw 16-bit stream can contain unpaired surrogates, which a Swift String cannot represent. Use compress(input:) -> Data, compressToUInt8Array(input:), or compressToUTF16(input:).")
 public func compress(input: String) -> String {
-    guard !input.isEmpty else {
-        return ""
-    }
-
     return _compress(input: input, bitPerChar: 16, charFromInt: { a in String(getCharFromInt(a)) })
 }
 
 public func compress(input: String) -> Data {
-    guard !input.isEmpty else {
-        return Data()
-    }
-
     return _compress(input: input, bitPerChar: 16, charFromInt: { a in
         return Data([UInt8(a % 256), UInt8(a >> 8)])
     })
@@ -146,10 +126,10 @@ public func compress(input: String) -> Data {
 
 // TODO: Change Generics
 private func _compress<T : RangeReplaceableCollection>(input: String, bitPerChar: Int, charFromInt: GetCharFromInt<T>) -> T {
-    guard !input.isEmpty else {
-        return T()
-    }
-
+    // 空文字列でも早期 return しない。本家 JS 版は空文字列と null を区別し、
+    // 空文字列に対しても終端コードを出力する (issue #33)。
+    // No early return for an empty string: the original JS distinguishes "" from null
+    // and still emits the end-of-stream code for "" (issue #33).
     var value = 0
     var wc : [UInt16] = []
     var w : [UInt16] = []

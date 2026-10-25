@@ -27,6 +27,8 @@ swift package --allow-writing-to-package-directory benchmark baseline check <nam
 ## 絶対に守ること / Hard rules
 
 1. **JS 版とのバイト単位の互換性が最優先。** `Tests/Resources/` の固定値はオリジナルの JavaScript 実装が生成した出力。テストが落ちたときに**フィクスチャを作り直して通してはいけない** — 落ちているのは実装側のリグレッション。
+   - 互換性は**空入力にも及ぶ**。JS 版は空文字列と null を区別し、空文字列に対しても終端コードを出力する。圧縮関数で空入力を早期 return してはいけない（issue #33）。往復テストだけでは検出できないため、各形式の出力を JS の固定値と直接突き合わせる。
+   - 展開 API の空入力は空文字列を返す（JS は null だが Swift の戻り値型は `String`）。これは圧縮側とは別の規約。
 2. **`swift test` はパッケージルートから実行する。** テストは `URL(fileURLWithPath: "Tests/Resources/...")` という相対パスでフィクスチャを読む（`Bundle.module` ではない）。カレントディレクトリが違うと読み込みに失敗する。
 3. **性能リグレッションは PR をブロックする。** `.github/workflows/benchmark.yml` が main をベースラインにして `throughput` p50 の -5% 超の劣化を落とす。`Sources/**` を触ったらローカルでも `swift package benchmark` で確認する。
 4. **移植性を壊さない。** CI は macOS / Linux / Windows に加え musl static SDK でもビルドする。プラットフォーム依存 API や Darwin 専用 API は使わない（現状の依存は `Foundation` のみ）。

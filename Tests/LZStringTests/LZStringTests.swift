@@ -93,13 +93,20 @@ struct LZStringTests {
         #expect(decompressed == Self.text)
     }
 
+    /// 空文字列の圧縮は終端コードを出力する（本家 JS 版と同じ挙動、issue #33）。
+    /// 展開側は空入力に対して空文字列を返す。
     @Test("空文字列のハンドリング")
     func emptyInputTests() {
-        #expect(LZString.compress(input: "") == Data())
+        #expect([UInt8](LZString.compress(input: "") as Data) == [0, 64])
+        #expect(LZString.compressToUTF16(input: "") == "\u{2020} ")
+        #expect(LZString.compressToBase64(input: "") == "Q===")
+        #expect(LZString.compressToEncodedURIComponent(input: "") == "Q")
+        #expect(LZString.compressToUInt8Array(input: "") == [64, 0])
+
         #expect(LZString.decompress(input: Data()) == "")
-        #expect(LZString.compressToUTF16(input: "") == "")
-        #expect(LZString.compressToBase64(input: "") == "")
-        #expect(LZString.compressToEncodedURIComponent(input: "") == "")
-        #expect(LZString.compressToUInt8Array(input: "") == [])
+        #expect(LZString.decompressFromBase64(input: "") == "")
+        #expect(LZString.decompressFromEncodedURIComponent(input: "") == "")
+        #expect(LZString.decompressFromUTF16(input: "") == "")
+        #expect(LZString.decompressFromUInt8Array(input: []) == "")
     }
 }
