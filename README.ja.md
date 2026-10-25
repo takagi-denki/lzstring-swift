@@ -34,7 +34,7 @@ pieroxy 氏による LZW ベースの文字列圧縮ライブラリ [lz-string](
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/takagi-denki/lzstring-swift.git", from: "1.1.0"),
+    .package(url: "https://github.com/takagi-denki/lzstring-swift.git", from: "1.2.0"),
 ]
 ```
 
@@ -140,6 +140,8 @@ LZString.decompressFromEncodedURIComponent("BIUwNmD2A0AEDqkBOYAmBCIA")
 ```
 
 逆方向も同様です。`lz-string` が生成した文字列を、対応する `decompressFrom…` に渡してください。
+
+空文字列も本家と同じく、**空でない**圧縮結果になります。`compressToBase64("")` は `""` ではなく `"Q==="` です。1.2.0 より前のリリースは空文字列を返していたため、空入力の圧縮結果はバージョン間で異なります。どちらの形式も展開すれば `""` に戻ります。
 
 ## 注意点
 
