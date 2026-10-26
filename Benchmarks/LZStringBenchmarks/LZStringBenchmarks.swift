@@ -49,16 +49,37 @@ let benchmarks: @Sendable () -> Void = {
     preflightLossless("UInt8Array", input: text, decoded: LZString.decompressFromUInt8Array(input: compressedUInt8Array))
     preflightLossless("URI", input: text, decoded: LZString.decompressFromEncodedURIComponent(input: compressedURI))
 
+    // 許容差は**正の値**で指定する。package-benchmark は内部で
+    // `-threshold...threshold` の範囲を作って判定するため、負の値を渡すと
+    // 範囲が逆転し、判定が成立しない（劣化を一切検出しなくなる）。
+    // 劣化の向きは metric の polarity（throughput は prefersLarger）が扱う。
+    //
+    // Tolerances must be positive: package-benchmark builds `-threshold...threshold`
+    // internally, so a negative value inverts the range and the gate stops detecting
+    // anything. Direction is handled by the metric's polarity.
+    //
+    // ゲートは throughput p50 のみ。他の metric は情報として記録するが判定には使わない。
+    // 壁時計時間とメモリは実行環境のノイズを拾いやすく、同一コードでも大きく振れる
+    // （CI 実測で allocated resident memory が 40% 変動した）。
+    //
+    // Only throughput p50 gates. The others are recorded for information but not checked:
+    // wall clock and memory swing widely even for identical code.
     let thresholds: [BenchmarkMetric: BenchmarkThresholds] = [
-        .throughput: BenchmarkThresholds(relative: [.p50: -5.0])
-//        .mallocCountTotal: BenchmarkThresholds(absolute: [.p50: 0])
+        .throughput: BenchmarkThresholds(relative: [.p50: 5.0]),
+        .wallClock: BenchmarkThresholds(relative: [:], absolute: [:]),
+        .mallocCountTotal: BenchmarkThresholds(relative: [:], absolute: [:]),
+        .allocatedResidentMemory: BenchmarkThresholds(relative: [:], absolute: [:]),
     ]
     
     // ベンチマークの基本設定 / Default configuration for benchmarks
     Benchmark.defaultConfiguration = .init(
         metrics: [.wallClock, .throughput, .mallocCountTotal, .allocatedResidentMemory],
         warmupIterations: 10,
-        scalingFactor: .kilo, // 1000回ループで1回の測定とする / 1000 iterations per measurement
+        // 1 回の操作を 1 サンプルとする。.kilo だと throughput が 1 桁台に量子化され
+        // （CI 実測で 9 vs 8 = 11%）、5% 閾値が測定分解能を下回っていた。
+        // One operation per sample: with .kilo the throughput values quantise to single
+        // digits, putting the 5% threshold below the measurement resolution.
+        scalingFactor: .one,
         maxDuration: .seconds(1),
         maxIterations: 10_000,
         thresholds: thresholds
