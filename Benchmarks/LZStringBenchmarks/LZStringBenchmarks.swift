@@ -21,8 +21,17 @@ let benchmarks: @Sendable () -> Void = {
     let compressedUInt8Array = LZString.compressToUInt8Array(input: text)
     let compressedURI = LZString.compressToEncodedURIComponent(input: text)
     
+    // 許容差は**正の値**で指定する。package-benchmark は内部で
+    // `-threshold...threshold` の範囲を作って判定するため、負の値を渡すと
+    // 範囲が逆転し、判定が成立しない（劣化を一切検出しなくなる）。
+    // 劣化の向きは metric の polarity（throughput は prefersLarger）が扱うので、
+    // 「throughput が 5% 以上落ちたら失敗」は正の 5.0 で表現する。
+    //
+    // Tolerances must be positive: package-benchmark builds `-threshold...threshold`
+    // internally, so a negative value inverts the range and the gate stops detecting
+    // anything. Direction is handled by the metric's polarity.
     let thresholds: [BenchmarkMetric: BenchmarkThresholds] = [
-        .throughput: BenchmarkThresholds(relative: [.p50: -5.0])
+        .throughput: BenchmarkThresholds(relative: [.p50: 5.0])
 //        .mallocCountTotal: BenchmarkThresholds(absolute: [.p50: 0])
     ]
     
