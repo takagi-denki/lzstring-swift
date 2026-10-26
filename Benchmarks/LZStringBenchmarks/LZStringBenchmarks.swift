@@ -30,16 +30,25 @@ let benchmarks: @Sendable () -> Void = {
     // Tolerances must be positive: package-benchmark builds `-threshold...threshold`
     // internally, so a negative value inverts the range and the gate stops detecting
     // anything. Direction is handled by the metric's polarity.
+    // ゲートは throughput p50 のみ。他の metric は情報として記録するが判定には使わない。
+    // 壁時計時間とメモリは実行環境のノイズを拾いやすく、同一コードでも大きく振れる
+    // （CI 実測で allocated resident memory が 40% 変動した）。
+    //
+    // Only throughput p50 gates. The other metrics are recorded for information but not
+    // checked: wall clock and memory are environment-sensitive and swing widely even for
+    // identical code (allocated resident memory moved 40% between CI runs).
     let thresholds: [BenchmarkMetric: BenchmarkThresholds] = [
-        .throughput: BenchmarkThresholds(relative: [.p50: 5.0])
-//        .mallocCountTotal: BenchmarkThresholds(absolute: [.p50: 0])
+        .throughput: BenchmarkThresholds(relative: [.p50: 5.0]),
+        .wallClock: BenchmarkThresholds(relative: [:], absolute: [:]),
+        .mallocCountTotal: BenchmarkThresholds(relative: [:], absolute: [:]),
+        .allocatedResidentMemory: BenchmarkThresholds(relative: [:], absolute: [:]),
     ]
     
     // ベンチマークの基本設定 / Default configuration for benchmarks
     Benchmark.defaultConfiguration = .init(
         metrics: [.wallClock, .throughput, .mallocCountTotal, .allocatedResidentMemory],
         warmupIterations: 10,
-        scalingFactor: .kilo, // 1000回ループで1回の測定とする / 1000 iterations per measurement
+        scalingFactor: .one, // 1 回の操作を 1 サンプルとする（分解能を上げる） / one operation per sample
         maxDuration: .seconds(1),
         maxIterations: 10_000,
         thresholds: thresholds
