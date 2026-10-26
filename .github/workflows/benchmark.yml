@@ -29,14 +29,44 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libjemalloc-dev
 
-      - name: Checkout main branch
-        run: git checkout main
-        
-      - name: Create baseline from main
-        run: swift package --allow-writing-to-package-directory benchmark baseline update ci-baseline
+      # 比較対象は**コミット SHA で固定する**。ブランチ名では fork PR を正しく扱えない:
+      # fork のブランチ名は base リポジトリのブランチとは限らず、fork 側が main を
+      # 使っていると base の main 同士を比較してしまう。
+      #
+      # Pin both sides to commit SHAs. A fork's branch name is not a branch of this
+      # repository, so `git checkout <head_ref>` can select the wrong commit (or fail).
+      #
+      # 候補 = PR の head コミット（作者が書いたコードそのもの）。
+      # 基準 = PR の base コミット（マージ先の固定された地点）。
+      # Candidate = the PR head commit; baseline = the PR base commit.
+      - name: Fetch the PR head commit
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: git fetch --no-tags origin "+refs/pull/${PR_NUMBER}/head:refs/remotes/pr/head"
 
-      - name: Checkout PR branch
-        run: git checkout ${{ github.head_ref }}
+      - name: Create baseline from the PR base commit
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git checkout --detach "$BASE_SHA"
+          echo "baseline HEAD: $(git rev-parse HEAD)"
+          test "$(git rev-parse HEAD)" = "$BASE_SHA"
+          swift package --allow-writing-to-package-directory benchmark baseline update ci-baseline
 
-      - name: Check performance against baseline
-        run: swift package --allow-writing-to-package-directory benchmark baseline check ci-baseline
+      # ベースラインは追跡対象外のディレクトリに書かれるため、
+      # 次のチェックアウトで失われないよう退避する。
+      # The baseline lives in an untracked directory; copy it aside so the next
+      # checkout cannot remove it.
+      - name: Preserve the baseline across the checkout
+        run: cp -R .benchmarkBaselines "$RUNNER_TEMP/benchmark-baselines"
+
+      - name: Check the PR head commit against the baseline
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git checkout --detach "$HEAD_SHA"
+          echo "candidate HEAD: $(git rev-parse HEAD)"
+          test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+          rm -rf .benchmarkBaselines
+          cp -R "$RUNNER_TEMP/benchmark-baselines" .benchmarkBaselines
+          swift package --allow-writing-to-package-directory benchmark baseline check ci-baseline
