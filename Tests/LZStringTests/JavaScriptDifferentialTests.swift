@@ -51,11 +51,9 @@ struct JavaScriptDifferentialTests {
     }
 
     static let corpus: Corpus = {
+        // 読み込みに失敗する場合はパッケージルート以外から実行されている。
         let url = URL(fileURLWithPath: "Tests/Resources/js_differential.json")
-        guard let data = try? Data(contentsOf: url) else {
-            fatalError("Tests/Resources/js_differential.json を読めません。swift test はパッケージルートから実行してください。")
-        }
-        return try! JSONDecoder().decode(Corpus.self, from: data)
+        return try! JSONDecoder().decode(Corpus.self, from: Data(contentsOf: url))
     }()
 
     static let cases: [Case] = corpus.cases
@@ -84,21 +82,28 @@ struct JavaScriptDifferentialTests {
         return String(decoding: Array(base.utf16.prefix(testCase.prefixLength)), as: UTF16.self)
     }
 
-    /// 失敗時に seed・ケース・形式・最初に相違した位置を報告する。
-    static func diagnose<T: Equatable>(_ actual: [T], _ expected: [T], case testCase: Case, format: String) -> Comment {
+    /// 一致判定と、失敗時に表示する診断（seed・ケース・形式・最初に相違した位置）を返す。
+    ///
+    /// `#expect` のコメント引数は autoclosure で失敗時しか評価されない。
+    /// 診断を組み立てる処理をそこに置くと実行されずカバレッジに現れないため、
+    /// 判定と診断をまとめて**常に評価する**形にしている。
+    static func compare<T: Equatable>(_ actual: [T], _ expected: [T], case testCase: Case, format: String) -> (Bool, Comment) {
         let limit = min(actual.count, expected.count)
         var index = 0
         while index < limit, actual[index] == expected[index] { index += 1 }
 
+        let matched = actual.count == expected.count && index == limit
         let actualValue = index < actual.count ? "\(actual[index])" : "<end>"
         let expectedValue = index < expected.count ? "\(expected[index])" : "<end>"
 
-        return Comment(rawValue: """
+        let comment = Comment(rawValue: """
             seed=\(corpus.seed) case=\(testCase.id) format=\(format) \
             (numBits \(testCase.width) への成長 \(testCase.position), \(testCase.note))
             最初の相違: index \(index) — swift=\(actualValue) js=\(expectedValue) \
             (swift \(actual.count) 要素 / js \(expected.count) 要素)
             """)
+
+        return (matched, comment)
     }
 
     // MARK: - コーパスの自己検証
@@ -134,7 +139,8 @@ struct JavaScriptDifferentialTests {
         let actual = Array(Self.input(for: testCase).utf16)
         let expected = Self.units(fromHex: testCase.inputUtf16Hex)
 
-        #expect(actual == expected, Self.diagnose(actual, expected, case: testCase, format: "input"))
+        let (resultInputOK, resultInputComment) = Self.compare(actual, expected, case: testCase, format: "input")
+        #expect(resultInputOK, resultInputComment)
     }
 
     // MARK: - 圧縮の差分
@@ -144,20 +150,22 @@ struct JavaScriptDifferentialTests {
         let input = Self.input(for: testCase)
 
         let base64 = LZString.compressToBase64(input: input)
-        #expect(base64 == testCase.base64,
-                Self.diagnose(Array(base64), Array(testCase.base64), case: testCase, format: "base64"))
+        let (base64OK, base64Comment) = Self.compare(Array(base64), Array(testCase.base64), case: testCase, format: "base64")
+        #expect(base64OK, base64Comment)
 
         let uri = LZString.compressToEncodedURIComponent(input: input)
-        #expect(uri == testCase.uri,
-                Self.diagnose(Array(uri), Array(testCase.uri), case: testCase, format: "uri"))
+        let (uriOK, uriComment) = Self.compare(Array(uri), Array(testCase.uri), case: testCase, format: "uri")
+        #expect(uriOK, uriComment)
 
         let utf16 = Array(LZString.compressToUTF16(input: input).utf16)
         let expectedUTF16 = Self.units(fromHex: testCase.utf16Hex)
-        #expect(utf16 == expectedUTF16, Self.diagnose(utf16, expectedUTF16, case: testCase, format: "utf16"))
+        let (resultUtf16OK, resultUtf16Comment) = Self.compare(utf16, expectedUTF16, case: testCase, format: "utf16")
+        #expect(resultUtf16OK, resultUtf16Comment)
 
         let uint8 = LZString.compressToUInt8Array(input: input)
         let expectedUInt8 = Self.bytes(fromHex: testCase.uint8Hex)
-        #expect(uint8 == expectedUInt8, Self.diagnose(uint8, expectedUInt8, case: testCase, format: "uint8Array"))
+        let (resultUint8OK, resultUint8Comment) = Self.compare(uint8, expectedUInt8, case: testCase, format: "uint8Array")
+        #expect(resultUint8OK, resultUint8Comment)
 
         // Data はリトルエンディアンのバイト順を保つため、JS の UInt8Array を
         // 2 バイトごとに入れ替えて比較する。
@@ -167,7 +175,8 @@ struct JavaScriptDifferentialTests {
             expectedData.append(expectedUInt8[i])
         }
         let data = [UInt8](LZString.compress(input: input) as Data)
-        #expect(data == expectedData, Self.diagnose(data, expectedData, case: testCase, format: "data"))
+        let (resultDataOK, resultDataComment) = Self.compare(data, expectedData, case: testCase, format: "data")
+        #expect(resultDataOK, resultDataComment)
     }
 
     // MARK: - 展開の差分
@@ -179,16 +188,20 @@ struct JavaScriptDifferentialTests {
         let expected = Self.units(fromHex: testCase.inputUtf16Hex)
 
         let fromBase64 = Array(LZString.decompressFromBase64(input: testCase.base64).utf16)
-        #expect(fromBase64 == expected, Self.diagnose(fromBase64, expected, case: testCase, format: "decode/base64"))
+        let (resultDecodebase64OK, resultDecodebase64Comment) = Self.compare(fromBase64, expected, case: testCase, format: "decode/base64")
+        #expect(resultDecodebase64OK, resultDecodebase64Comment)
 
         let fromURI = Array(LZString.decompressFromEncodedURIComponent(input: testCase.uri).utf16)
-        #expect(fromURI == expected, Self.diagnose(fromURI, expected, case: testCase, format: "decode/uri"))
+        let (resultDecodeuriOK, resultDecodeuriComment) = Self.compare(fromURI, expected, case: testCase, format: "decode/uri")
+        #expect(resultDecodeuriOK, resultDecodeuriComment)
 
         let utf16Payload = String(decoding: Self.units(fromHex: testCase.utf16Hex), as: UTF16.self)
         let fromUTF16 = Array(LZString.decompressFromUTF16(input: utf16Payload).utf16)
-        #expect(fromUTF16 == expected, Self.diagnose(fromUTF16, expected, case: testCase, format: "decode/utf16"))
+        let (resultDecodeutf16OK, resultDecodeutf16Comment) = Self.compare(fromUTF16, expected, case: testCase, format: "decode/utf16")
+        #expect(resultDecodeutf16OK, resultDecodeutf16Comment)
 
         let fromUInt8 = Array(LZString.decompressFromUInt8Array(input: Self.bytes(fromHex: testCase.uint8Hex)).utf16)
-        #expect(fromUInt8 == expected, Self.diagnose(fromUInt8, expected, case: testCase, format: "decode/uint8Array"))
+        let (resultDecodeuint8OK, resultDecodeuint8Comment) = Self.compare(fromUInt8, expected, case: testCase, format: "decode/uint8Array")
+        #expect(resultDecodeuint8OK, resultDecodeuint8Comment)
     }
 }
