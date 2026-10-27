@@ -1,62 +1,71 @@
 # AGENTS.md
 
-lz-string（[pieroxy/lz-string](https://github.com/pieroxy/lz-string)）の Swift 移植ライブラリ。
+A Swift port of lz-string ([pieroxy/lz-string](https://github.com/pieroxy/lz-string)).
 
-## コマンド / Commands
+## Commands
 
 ```sh
-swift build --target LZString          # ライブラリのみビルド（CI と同じ）
-swift test                             # 必ずパッケージルートで実行（後述）
-swift package benchmark                # ベンチマーク実行（要 jemalloc）
+swift build --target LZString          # build the library only (what CI does)
+swift test                             # must be run from the package root (see below)
+swift package benchmark                # run the benchmarks (requires jemalloc)
 swift package --allow-writing-to-package-directory benchmark baseline update <name>
 swift package --allow-writing-to-package-directory benchmark baseline check <name>
 ```
 
-- Swift 6.2 / swift-tools-version:6.2。対応プラットフォームは macOS 13+, iOS 13+, tvOS 13+, watchOS 6+。
-- ベンチマークには `libjemalloc` が必要（Linux: `apt-get install -y libjemalloc-dev`、macOS: `brew install jemalloc`）。
+- Swift 6.2 / swift-tools-version:6.2. Supported platforms are macOS 13+, iOS 13+, tvOS 13+, watchOS 6+.
+- The benchmarks need `libjemalloc` (Linux: `apt-get install -y libjemalloc-dev`, macOS: `brew install jemalloc`).
 
-## 構成 / Layout
+## Layout
 
-| パス | 役割 |
+| Path | Role |
 | --- | --- |
-| `Sources/LZString/LZString.swift` | 実装のすべて（単一ファイル） |
-| `Tests/LZStringTests/LZStringTests.swift` | swift-testing によるテスト |
-| `Tests/Resources/*.txt` | JS 版の出力と一致することを保証する**ゴールデンファイル** |
-| `Benchmarks/LZStringBenchmarks/` | ordo-one/package-benchmark によるベンチ |
+| `Sources/LZString/LZString.swift` | The entire implementation (a single file) |
+| `Tests/LZStringTests/LZStringTests.swift` | Tests, written with swift-testing |
+| `Tests/Resources/*.txt` | **Golden files** that pin agreement with the JavaScript implementation |
+| `Benchmarks/LZStringBenchmarks/` | Benchmarks, using ordo-one/package-benchmark |
 
-## 絶対に守ること / Hard rules
+## Hard rules
 
-1. **JS 版とのバイト単位の互換性が最優先。** `Tests/Resources/` の固定値はオリジナルの JavaScript 実装が生成した出力。テストが落ちたときに**フィクスチャを作り直して通してはいけない** — 落ちているのは実装側のリグレッション。
-   - 互換性は**空入力にも及ぶ**。JS 版は空文字列と null を区別し、空文字列に対しても終端コードを出力する。圧縮関数で空入力を早期 return してはいけない（issue #33）。往復テストだけでは検出できないため、各形式の出力を JS の固定値と直接突き合わせる。
-   - 展開 API の空入力は空文字列を返す（JS は null だが Swift の戻り値型は `String`）。これは圧縮側とは別の規約。
-   - `Tests/Resources/js_differential.json` は辞書ビット幅の成長境界を狙った JS 差分コーパス（issue #41）。参照実装のバージョンと sha256、入力生成の seed を内部に記録している。再生成は `Scripts/generate-js-differential-fixture.js`（Node が必要）で、`swift test` からは実行されない。**テストが落ちたときに再生成して通してはいけない。**
-2. **`swift test` はパッケージルートから実行する。** テストは `URL(fileURLWithPath: "Tests/Resources/...")` という相対パスでフィクスチャを読む（`Bundle.module` ではない）。カレントディレクトリが違うと読み込みに失敗する。
-3. **性能リグレッションは PR をブロックする。** `.github/workflows/benchmark.yml` が PR の base コミットをベースラインにして、`throughput` p50 が **15% 超**低下した場合に落とす。`Sources/**` を触ったらローカルでも `swift package benchmark` で確認する。
-   - 閾値が 15% なのは測定の都合による（issue #56）。throughput のパーセンタイルは K 単位に正規化された整数として保存されるため、保存値 23K なら 1 単位が 4.3%、2 単位で 8.7% に相当する。**5% ではコードを変えなくても 3 回中 2 回失敗した**ため、偽陽性を無くせる水準まで上げてある。閾値を下げたい場合は、先に測定の分解能を上げること。
-   - 判定対象は `throughput` p50 のみ。壁時計時間・malloc・メモリは記録するが判定しない（同一コードでメモリが 40% 振れた実績がある）。
-4. **移植性を壊さない。** CI は macOS / Linux / Windows に加え musl static SDK でもビルドする。プラットフォーム依存 API や Darwin 専用 API は使わない（現状の依存は `Foundation` のみ）。
+1. **Byte-for-byte compatibility with the JavaScript implementation comes first.** The fixed values under `Tests/Resources/` are output produced by the original JavaScript implementation. When a test fails, **do not regenerate the fixtures to make it pass** — the failure is a regression in the implementation.
+   - Compatibility **extends to empty input**. The JavaScript implementation distinguishes an empty string from null and still emits the end-of-stream code for an empty string. Compressors must not return early for empty input (issue #33). A round-trip test cannot detect this, so each format's output is compared against the fixed JavaScript value directly.
+   - Decompression APIs return an empty string for empty input (JavaScript returns null, but the Swift return type is `String`). This is a separate contract from the compression side.
+   - `Tests/Resources/js_differential.json` is a differential corpus aimed at dictionary bit-width transitions (issue #41). It records the reference implementation's version and sha256, and the input-generation seed. Regenerate it with `Scripts/generate-js-differential-fixture.js` (needs Node); `swift test` never runs it. **Do not regenerate it to make a failing test pass.**
+2. **Run `swift test` from the package root.** The tests read fixtures through paths relative to the working directory (`URL(fileURLWithPath: "Tests/Resources/...")`, not `Bundle.module`), so they fail to load from anywhere else.
+3. **Performance regressions block a PR.** `.github/workflows/benchmark.yml` takes the PR's base commit as the baseline and fails when `throughput` p50 drops by more than **15%**. Check locally with `swift package benchmark` whenever you touch `Sources/**`.
+   - The threshold is 15% because of how the measurement is stored (issue #56). Throughput percentiles are stored as integers after unit normalisation, so at a stored value of 23K one unit is 4.3% and two units are 8.7%. **At 5%, an unchanged tree failed two runs out of three**, so the tolerance was raised to a level that removes false positives. To lower it, first improve the measurement resolution.
+   - Only `throughput` p50 is gated. Wall clock, malloc and memory are recorded but not checked (allocated resident memory has swung 40% for identical code).
+4. **Do not break portability.** CI builds on macOS, Linux and Windows, plus the musl static SDK. Do not use platform-specific or Darwin-only APIs (the only dependency today is `Foundation`).
 
-## API の形 / API shape
+## API shape
 
-- `enum` や `struct` の名前空間を持たず、モジュール `LZString` 直下の**トップレベル public 関数**として公開している（呼び出しは `LZString.compress(input:)` のようにモジュール修飾）。この構造は互換性のために維持する。
-- `compress(input:)` は `-> String` と `-> Data` の**戻り値型だけが違うオーバーロード**。呼び出し側は必ず型を明示する:
+- The API has no `enum` or `struct` namespace: it is exposed as **top-level public functions** in the `LZString` module, so call sites qualify them by module, as in `LZString.compress(input:)`. Keep this structure for compatibility.
+- `compress(input:)` is **overloaded on its return type** (`-> String` and `-> Data`), so call sites must state the type:
   ```swift
   let data: Data = LZString.compress(input: text)
   blackHole(LZString.compress(input: text) as Data)
   ```
-- 生の `String` 形式（`compress(input:) -> String` と `decompress(input: String)`）は**非推奨**。生の 16 ビットストリームには対になっていないサロゲートが現れることがあり、Swift の `String` はそれを表現できず `U+FFFD` に置換されるため不可逆（issue #22）。可逆な形式は `Data` / `[UInt8]` / `compressToUTF16`。
-  - パッケージ内でこの形式を意図的に使っている箇所（テストとベンチマーク）は、囲む宣言に `@available(*, deprecated)` を付けて警告を抑えている。Swift には警告抑制のプラグマがないため、ベンチマークの呼び出し 1 箇所だけは警告が残る（意図的）。
-- 公開 API を追加・変更したら、Base64 / UTF16 / URI / UInt8Array / Data / String の各経路にテストとベンチマークの両方を追加する。
+- The raw `String` format (`compress(input:) -> String` and `decompress(input: String)`) is **deprecated**. The raw 16-bit stream can contain unpaired surrogates, which a Swift `String` cannot represent and replaces with `U+FFFD`, making the format lossy (issue #22). The lossless formats are `Data`, `[UInt8]` and `compressToUTF16`.
+  - Where the package uses this format deliberately (tests and benchmarks), the enclosing declaration is marked `@available(*, deprecated)` to silence the warning. Swift has no pragma for suppressing warnings, so one call site in the benchmarks still warns; that is intentional.
+- When you add or change a public API, add both tests and benchmarks for every path: Base64, UTF16, URI, UInt8Array, Data and String.
 
-## 実装上の注意 / Implementation notes
+## Implementation notes
 
-- 内部は UTF-16 コードユニット単位で動く（`input.utf16`、`[UInt16]` の辞書キー）。`Character` や `String.Index` 単位に置き換えると絵文字などサロゲートペアで JS との互換性が壊れる。
-- `_compress` の本体ループと末尾処理には**意図的に重複した**ビット出力コードがある。オリジナル JS の構造をそのまま写したもので、読みやすさのための安易なリファクタよりも互換性とインライン性能を優先している。
-- `keyStrBase64Array` / `keyStrUriSafeArray` は ASCII コードを添字にする 256 要素のルックアップテーブル（性能最適化、commit `8cde82f`）。アルファベットを変えるときは文字列と配列の両方を更新する。
-- `_decompress` は復号結果を UTF-16 コードユニット (`[UInt16]`) のまま貯め、最後に `String(decoding:as: UTF16.self)` で復元する。バイト列に落として `String(data:encoding:.utf16)` に渡してはいけない — 先頭の U+FEFF / U+FFFE が BOM として解釈され、文字が失われる（issue #23）。
+- The internals work in UTF-16 code units (`input.utf16`, dictionary keys of `[UInt16]`). Switching to `Character` or `String.Index` units breaks compatibility with JavaScript for surrogate pairs such as emoji.
+- The main loop and the tail handling of `_compress` contain **deliberately duplicated** bit-output code. It mirrors the structure of the original JavaScript, and compatibility and inlining are preferred over a readability refactor.
+- `keyStrBase64Array` and `keyStrUriSafeArray` are 256-element lookup tables indexed by ASCII code (a performance optimisation, commit `8cde82f`). When changing an alphabet, update both the string and the array.
+- `_decompress` accumulates the decoded result as UTF-16 code units (`[UInt16]`) and builds the string with `String(decoding:as: UTF16.self)`. Do not serialise it to bytes and pass it to `String(data:encoding:.utf16)` — a leading U+FEFF or U+FFFE is then read as a BOM and the character is lost (issue #23).
 
-## スタイル / Style
+## Style
 
-- インデント 4 スペース。テスト名・コメントは日本語で書かれている（既存に合わせる）。英語を併記しているコメントもある。
-- テストは **swift-testing**（`import Testing` / `@Suite` / `@Test` / `#expect`）。XCTest は使わない。
-- `.gemini/styleguide.md` の方針に従い、このリポジトリでの応答は**英語と日本語の両方**で行う。
+- Four-space indentation.
+- Tests use **swift-testing** (`import Testing` / `@Suite` / `@Test` / `#expect`). Do not use XCTest.
+
+### Language
+
+- **Write code-facing text in English.** This covers identifiers, comments, documentation comments, `@Suite` and `@Test` display names, test function names, assertion descriptions, and developer-facing or diagnostic messages across `Sources`, `Tests`, `Benchmarks` and `Scripts`.
+- Documentation comments on public APIs are English only. Keep the existing warnings on the deprecated APIs, in English.
+- The policy applies to new and changed code. Parts of the existing code are still written in Japanese; translating the repository wholesale is a separate task and is not required here.
+- **Do not translate or remove multilingual test data.** Japanese text, emoji and combining characters used as test input or expected values exist to verify Unicode compatibility. Golden files and reference data stay as they are.
+- Do not change strings or public identifiers that an external specification or API compatibility depends on, merely for language consistency.
+- GitHub issue and pull request descriptions, discussion comments and review comments may be written in Japanese, in English, or in both. Bilingual communication is permitted, not required.
+- This policy governs text in the repository, not the language used when talking to the person you are working with, and it does not deprecate Japanese documentation such as `README.ja.md`.
