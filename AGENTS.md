@@ -59,4 +59,4 @@ swift package --allow-writing-to-package-directory benchmark baseline check <nam
 
 - インデント 4 スペース。テスト名・コメントは日本語で書かれている（既存に合わせる）。英語を併記しているコメントもある。
 - テストは **swift-testing**（`import Testing` / `@Suite` / `@Test` / `#expect`）。XCTest は使わない。
-- `.gemini/styleguide.md` の方針に従い、このリポジトリでの応答は**英語と日本語の両方**で行う。
+- Issue・PR・レビューコメントなどのコミュニケーションは、日本語と英語を併記してよい（必須ではない）。
