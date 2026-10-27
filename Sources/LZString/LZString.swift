@@ -28,6 +28,21 @@ private func getBaseValue(alphabet: [Int], char: Character) -> Int {
     return alphabet[Int(ascii)]
 }
 
+/// Compresses `input` into a string drawn from a Base64 alphabet.
+///
+/// The result is not a Base64 encoding of `input`. It is the LZ-compressed bit stream
+/// rendered with the Base64 alphabet (`A`–`Z`, `a`–`z`, `0`–`9`, `+`, `/`, padded with
+/// `=`), so a general-purpose Base64 decoder does not recover the original text. Reverse
+/// it with `decompressFromBase64(input:)`.
+///
+/// Compressing an empty string still emits an end-of-stream code, so the result is not
+/// empty: `compressToBase64(input: "")` returns `"Q==="`.
+///
+///     let compressed = LZString.compressToBase64(input: "Hello, World!")
+///     // "BIUwNmD2A0AEDqkBOYAmBCIA"
+///
+/// - Parameter input: The text to compress.
+/// - Returns: The compressed stream written in the Base64 alphabet.
 public func compressToBase64(input: String) -> String {
     let result = _compress(input: input, bitPerChar: 6, charFromInt: { a in String(keyStrBase64[a])})
     switch result.count % 4 {
@@ -44,6 +59,17 @@ public func compressToBase64(input: String) -> String {
     }
 }
 
+/// Decompresses a stream produced by `compressToBase64(input:)`.
+///
+/// This function does not validate its argument. Input that is not a valid compressed
+/// stream returns an empty string or meaningless text rather than reporting an error, and
+/// an empty argument returns an empty string. Because a failure is reported as `""`, a
+/// successful decode of empty original text cannot be distinguished from a failure by the
+/// return value alone.
+///
+/// - Parameter input: A stream produced by `compressToBase64(input:)`, or by the matching
+///   function of the original lz-string implementation.
+/// - Returns: The original text, or an empty string if the input could not be decoded.
 public func decompressFromBase64(input: String) -> String {
     guard !input.isEmpty else {
         return ""
@@ -52,10 +78,35 @@ public func decompressFromBase64(input: String) -> String {
     return _decompress(length: input.count, resetValue: 32, nextValue: { a in getBaseValue(alphabet: keyStrBase64Array, char: input[a]) })
 }
 
+/// Compresses `input` into a string that packs 15 bits into each UTF-16 code unit.
+///
+/// Unlike the deprecated raw `String` format, this representation is lossless, which makes
+/// it the compact choice when the destination counts characters rather than bytes.
+///
+/// The result ends with a trailing space that belongs to the format's output. Treat the
+/// returned string as opaque and pass it back to `decompressFromUTF16(input:)` unchanged;
+/// trimming or otherwise normalising it is not a supported use.
+///
+/// Compressing an empty string still emits an end-of-stream code, so the result is not
+/// empty.
+///
+/// - Parameter input: The text to compress.
+/// - Returns: The compressed stream as 15-bit-packed UTF-16 code units.
 public func compressToUTF16(input: String) -> String {
     return _compress(input: input, bitPerChar: 15, charFromInt: { a in String(getCharFromInt(a + 32))}) + " "
 }
 
+/// Decompresses a stream produced by `compressToUTF16(input:)`.
+///
+/// This function does not validate its argument. Input that is not a valid compressed
+/// stream returns an empty string or meaningless text rather than reporting an error, and
+/// an empty argument returns an empty string. Because a failure is reported as `""`, a
+/// successful decode of empty original text cannot be distinguished from a failure by the
+/// return value alone.
+///
+/// - Parameter input: A stream produced by `compressToUTF16(input:)`, or by the matching
+///   function of the original lz-string implementation.
+/// - Returns: The original text, or an empty string if the input could not be decoded.
 public func decompressFromUTF16(input: String) -> String {
     guard !input.isEmpty else {
         return ""
@@ -64,6 +115,20 @@ public func decompressFromUTF16(input: String) -> String {
     return _decompress(length: input.utf16.count, resetValue: 16384, nextValue: { i in Int(input.utf16[i]) - 32 })
 }
 
+/// Compresses `input` into bytes laid out like the original implementation's
+/// `Uint8Array`.
+///
+/// Each 16-bit unit of the compressed stream is stored **big-endian**, matching the
+/// JavaScript `compressToUint8Array`. This differs from `compress(input:)` returning
+/// `Data`, which stores the same stream little-endian. Converting between the two with
+/// `Data(_:)` or `[UInt8](_:)` alone does not reorder the bytes, so the result cannot be
+/// read by the other format's decompressor.
+///
+/// Compressing an empty string still emits an end-of-stream code, so the result is not
+/// empty: `compressToUInt8Array(input: "")` returns `[64, 0]`.
+///
+/// - Parameter input: The text to compress.
+/// - Returns: The compressed stream as big-endian 16-bit units.
 public func compressToUInt8Array(input: String) -> [UInt8] {
     let compressed : Data = compress(input: input)
     var buffer = [UInt8](repeating: 0, count: compressed.count)
@@ -76,6 +141,20 @@ public func compressToUInt8Array(input: String) -> [UInt8] {
     return buffer
 }
 
+/// Decompresses bytes produced by `compressToUInt8Array(input:)`.
+///
+/// The bytes are read as **big-endian** 16-bit units. Passing the little-endian bytes of
+/// `compress(input:)` returning `Data` without reordering them does not decode correctly.
+///
+/// This function does not validate its argument. Input that is not a valid compressed
+/// stream returns an empty string or meaningless text rather than reporting an error, and
+/// an empty argument returns an empty string. Because a failure is reported as `""`, a
+/// successful decode of empty original text cannot be distinguished from a failure by the
+/// return value alone.
+///
+/// - Parameter input: Bytes produced by `compressToUInt8Array(input:)`, or by the matching
+///   function of the original lz-string implementation.
+/// - Returns: The original text, or an empty string if the input could not be decoded.
 public func decompressFromUInt8Array(input: [UInt8]) -> String {
     guard !input.isEmpty else {
         return ""
@@ -88,10 +167,39 @@ public func decompressFromUInt8Array(input: [UInt8]) -> String {
     })
 }
 
+/// Compresses `input` into a string that can be placed in a URL query component.
+///
+/// The alphabet is `A`–`Z`, `a`–`z`, `0`–`9`, `+`, `-`, `$`, with no `/` and no `=`
+/// padding. This is neither Base64URL nor percent-encoding, and the result is not a
+/// percent-encoded form of `input`.
+///
+/// The alphabet does contain `+`. Some URL decoders turn `+` into a space;
+/// `decompressFromEncodedURIComponent(input:)` converts spaces back to `+`, so a value
+/// that went through such a decoder still decodes.
+///
+/// Compressing an empty string still emits an end-of-stream code, so the result is not
+/// empty: `compressToEncodedURIComponent(input: "")` returns `"Q"`.
+///
+/// - Parameter input: The text to compress.
+/// - Returns: The compressed stream written in the URL-safe alphabet.
 public func compressToEncodedURIComponent(input: String) -> String {
     return _compress(input: input, bitPerChar: 6, charFromInt: { i in String(keyStrUriSafe[i])})
 }
 
+/// Decompresses a stream produced by `compressToEncodedURIComponent(input:)`.
+///
+/// Every space in the input is converted to `+` before decoding, which restores values
+/// whose `+` characters were turned into spaces by a URL decoder.
+///
+/// This function does not validate its argument. Input that is not a valid compressed
+/// stream returns an empty string or meaningless text rather than reporting an error, and
+/// an empty argument returns an empty string. Because a failure is reported as `""`, a
+/// successful decode of empty original text cannot be distinguished from a failure by the
+/// return value alone.
+///
+/// - Parameter input: A stream produced by `compressToEncodedURIComponent(input:)`, or by
+///   the matching function of the original lz-string implementation.
+/// - Returns: The original text, or an empty string if the input could not be decoded.
 public func decompressFromEncodedURIComponent(input: String) -> String {
     guard !input.isEmpty else {
         return ""
@@ -102,22 +210,46 @@ public func decompressFromEncodedURIComponent(input: String) -> String {
     return _decompress(length: replaced.count, resetValue: 32, nextValue: { a in getBaseValue(alphabet: keyStrUriSafeArray, char: replaced[a]) })
 }
 
-/// 生の 16 ビットストリームをそのまま `String` として返す。
+/// Returns the raw 16-bit compressed stream as a `String`.
 ///
-/// - Warning: この形式は**不可逆**です。圧縮結果には対になっていない UTF-16 サロゲート
-///   コードユニットが含まれることがあり、Swift の `String` はそれを表現できないため
-///   `U+FFFD` に置換されてデータが失われます。可逆な形式を使ってください。
-///
-/// Returns the raw 16-bit stream as a `String`.
+/// `compress(input:)` is overloaded on its return type, so the call site must state which
+/// one it wants. Prefer the `Data` overload: `let compressed: Data = LZString.compress(...)`.
 ///
 /// - Warning: This format is **lossy**. The stream can contain unpaired UTF-16 surrogate
 ///   code units, which a Swift `String` cannot represent; they are replaced with `U+FFFD`
-///   and the data is destroyed. Use one of the lossless formats instead.
+///   and the data is destroyed. This is a property of the type rather than a defect that
+///   can be fixed here. Use a lossless format instead: `compress(input:)` returning `Data`,
+///   `compressToUInt8Array(input:)`, or `compressToUTF16(input:)`.
+///
+/// - Parameter input: The text to compress.
+/// - Returns: The compressed stream as a `String`, with any unpaired surrogate code unit
+///   replaced by `U+FFFD`.
 @available(*, deprecated, message: "Lossy: the raw 16-bit stream can contain unpaired surrogates, which a Swift String cannot represent. Use compress(input:) -> Data, compressToUInt8Array(input:), or compressToUTF16(input:).")
 public func compress(input: String) -> String {
     return _compress(input: input, bitPerChar: 16, charFromInt: { a in String(getCharFromInt(a)) })
 }
 
+/// Compresses `input` into the most compact representation this library offers.
+///
+/// Each 16-bit unit of the compressed stream is stored **little-endian**. This differs from
+/// `compressToUInt8Array(input:)`, which stores the same stream big-endian for compatibility
+/// with the original implementation; converting between the two with `Data(_:)` or
+/// `[UInt8](_:)` alone does not reorder the bytes.
+///
+/// `compress(input:)` is overloaded on its return type, so the call site must state which
+/// one it wants:
+///
+///     import Foundation
+///
+///     let compressed: Data = LZString.compress(input: "Hello, World!")
+///     let original = LZString.decompress(input: compressed)
+///     // "Hello, World!"
+///
+/// Compressing an empty string still emits an end-of-stream code, so the result is not
+/// empty: it is the two bytes `[0, 64]`.
+///
+/// - Parameter input: The text to compress.
+/// - Returns: The compressed stream as little-endian 16-bit units.
 public func compress(input: String) -> Data {
     return _compress(input: input, bitPerChar: 16, charFromInt: { a in
         return Data([UInt8(a % 256), UInt8(a >> 8)])
@@ -378,15 +510,21 @@ private func _compress<T : RangeReplaceableCollection>(input: String, bitPerChar
     return context.data
 }
 
-/// 生の 16 ビットストリームを `String` から展開する。
-///
-/// - Warning: 対になる `compress(input:) -> String` が不可逆なため、この形式で往復させると
-///   データが失われることがあります。可逆な形式を使ってください。
-///
 /// Decompresses the raw 16-bit stream from a `String`.
 ///
-/// - Warning: Its counterpart `compress(input:) -> String` is lossy, so a round trip through
-///   this format can lose data. Use one of the lossless formats instead.
+/// - Warning: Its counterpart, `compress(input:)` returning `String`, is **lossy**, so a
+///   round trip through this format can lose data. Use a lossless format instead:
+///   `decompress(input:)` taking `Data`, `decompressFromUInt8Array(input:)`, or
+///   `decompressFromUTF16(input:)`.
+///
+/// This function does not validate its argument. Input that is not a valid compressed
+/// stream returns an empty string or meaningless text rather than reporting an error, and
+/// an empty argument returns an empty string. Because a failure is reported as `""`, a
+/// successful decode of empty original text cannot be distinguished from a failure by the
+/// return value alone.
+///
+/// - Parameter input: A stream produced by `compress(input:)` returning `String`.
+/// - Returns: The original text, or an empty string if the input could not be decoded.
 @available(*, deprecated, message: "Lossy counterpart of the deprecated compress(input:) -> String. Use decompress(input: Data), decompressFromUInt8Array(input:), or decompressFromUTF16(input:).")
 public func decompress(input: String) -> String {
     guard !input.isEmpty else {
@@ -396,6 +534,21 @@ public func decompress(input: String) -> String {
     return _decompress(length: input.utf16.count, resetValue: 32768, nextValue: {i in Int(input.utf16[i])})
 }
 
+/// Decompresses data produced by `compress(input:)` returning `Data`.
+///
+/// The bytes are read as **little-endian** 16-bit units. Passing the big-endian bytes of
+/// `compressToUInt8Array(input:)` without reordering them does not decode correctly.
+///
+/// A sliced `Data` whose `startIndex` is not zero is handled correctly; no copy is needed.
+///
+/// This function does not validate its argument. Input that is not a valid compressed
+/// stream returns an empty string or meaningless text rather than reporting an error, and
+/// an empty argument returns an empty string. Because a failure is reported as `""`, a
+/// successful decode of empty original text cannot be distinguished from a failure by the
+/// return value alone.
+///
+/// - Parameter input: Data produced by `compress(input:)` returning `Data`.
+/// - Returns: The original text, or an empty string if the input could not be decoded.
 public func decompress(input: Data) -> String {
     guard !input.isEmpty else {
         return ""
