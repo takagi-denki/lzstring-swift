@@ -626,19 +626,30 @@ private func _decompress(length: Int, resetValue: Int, nextValue: @escaping GetN
 
     next = header
 
-    if next == 0 {
+    // 先頭タグは 0 = 8 ビットリテラル、1 = 16 ビットリテラル、2 = 終端のみが有効。
+    // 3 は不正な入力であり、文字として扱ってはいけない。以前は分岐が無く、
+    // c が初期値 0 のまま後続に落ちて NUL を含む文字列を返していた (issue #57)。
+    //
+    // The initial tag is 0 = 8-bit literal, 1 = 16-bit literal, 2 = end of stream.
+    // Tag 3 is invalid; it previously fell through with the initial c == 0 and produced
+    // a fabricated NUL character. A switch keeps the handling exhaustive.
+    switch next {
+    case 0:
         guard let literal = _slide(data: &data, maxpower: 2 << 7) else {
             return ""
         }
 
         c = UInt64(literal)
-    } else if next == 1 {
+    case 1:
         guard let literal = _slide(data: &data, maxpower: 2 << 15) else {
             return ""
         }
 
         c = UInt64(literal)
-    } else if next == 2 {
+    case 2:
+        // 空のストリーム。
+        return ""
+    default:
         return ""
     }
 
