@@ -1,7 +1,7 @@
 {
   "name": "lzstring-swift-fixture-tools",
   "private": true,
-  "description": "Tests/Resources のゴールデンファイルを生成するためだけの開発用ツール。swift test からは使われない。 / Dev-only tooling for generating golden fixtures; not used by swift test.",
+  "description": "Dev-only tooling for generating the golden fixtures under Tests/Resources; not used by swift test.",
   "scripts": {
     "generate": "node generate-js-differential-fixture.js"
   },

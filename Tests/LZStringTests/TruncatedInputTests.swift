@@ -2,29 +2,23 @@ import Testing
 import Foundation
 @testable import LZString
 
-/// Issue #21 の回帰テスト。
-/// 以前は不完全・不正な入力でビット読み出しが入力長を超え、
-/// `String index is out of bounds` などでプロセスごと落ちていた。
-///
 /// Regression tests for issue #21. Truncated or malformed input used to read past
 /// the end of the buffer and terminate the process.
 ///
-/// 失敗時の戻り値は空文字列。本家 JavaScript 実装 (pieroxy/lz-string 1.5.0) も
-/// 同じ入力に対して "" を返すことを確認済み。
 /// The documented failure result is an empty string, matching the original
-/// JavaScript implementation for the same inputs.
-@Suite("不完全な入力のハンドリング / Truncated input")
+/// JavaScript implementation (pieroxy/lz-string 1.5.0) for the same inputs.
+@Suite("Truncated input")
 struct TruncatedInputTests {
     static let text = "Lorem ipsum dolor sit amet, consectetur adipiscing elit"
     static let validBase64 = "DIewTgpgtgBAlgBwM4FdYBMQBtwyXAFxgEMoICAaGAYxADskJqDyUwT1E4lq46BzGBCyEgA="
 
-    @Test("Issue #21 の最小再現: 1文字の Base64 入力で落ちない")
+    @Test("Issue #21 minimal reproduction: a one-character Base64 input does not trap")
     func minimalReproduction() {
         #expect(LZString.decompressFromBase64(input: "A") == "")
     }
 
-    @Test("不完全・不正な入力は全形式で空文字列を返す")
-    @available(*, deprecated, message: "生 String 形式 (#22) の検証を含む")
+    @Test("Truncated and malformed input returns an empty string in every format")
+    @available(*, deprecated, message: "Intentional: covers the raw String format (#22).")
     func malformedInputReturnsEmptyString() {
         #expect(LZString.decompressFromBase64(input: "A") == "")
         #expect(LZString.decompressFromBase64(input: "!!!!") == "")
@@ -33,48 +27,48 @@ struct TruncatedInputTests {
         #expect(LZString.decompress(input: "A") == "")
     }
 
-    /// 1 バイトだけの入力は `!input.isEmpty` の公開ガードを通過してしまい、
-    /// ペアの 2 バイト目を読んだ時点で落ちていた。
-    @Test("バイト列が2バイトに満たない場合も落ちない")
+    /// A one-byte input passes the public `!input.isEmpty` guard and used to trap when
+    /// the second byte of the pair was read.
+    @Test("Byte input shorter than one code unit does not trap")
     func binaryInputShorterThanOneCodeUnit() {
         #expect(LZString.decompressFromUInt8Array(input: [0x01]) == "")
         #expect(LZString.decompress(input: Data([0x01])) == "")
     }
 
-    /// この payload が復号できる最小長。パディングと未使用の末尾ビットを
-    /// 取り除いてもストリームとしては完結しているため、全長より短くても復号できる。
-    /// マジックナンバーではなく、実測した境界として名前を付けている (issue #42)。
+    /// The smallest prefix of this payload that still decodes: stripping padding and
+    /// unused trailing bits leaves a complete stream, so a shorter prefix still works.
+    /// Named as a measured boundary rather than left as a magic number (issue #42).
     static let smallestDecodablePrefix = 70
 
-    /// 正常な圧縮データのあらゆる切り詰めを試す。
-    /// 1 つでもトラップすればテストプロセスごと落ちるため、これ自体が回帰検出になる。
-    @Test("あらゆる長さに切り詰めた入力で落ちない")
+    /// Tries every truncation of a valid payload. A single trap would take down the test
+    /// process, so the sweep itself is the regression check.
+    @Test("Input truncated to any length does not trap")
     func everyTruncationIsSafe() {
         for length in 1...Self.validBase64.count {
             let truncated = String(Self.validBase64.prefix(length))
             let decoded = LZString.decompressFromBase64(input: truncated)
 
-            // 切り詰めた入力は「全文復元」か「空文字列」のどちらかで、
-            // 途中まで復号された壊れたテキストは返さない。
+            // A truncated input yields either the full text or an empty string, never
+            // partially decoded, corrupted text.
             #expect(decoded.isEmpty || decoded == Self.text,
-                    "length=\(length): 部分的な結果 \(decoded.debugDescription)")
+                    "length=\(length): partial result \(decoded.debugDescription)")
 
-            // 境界が実測値どおりであること。
+            // The boundary must match the measured value.
             #expect((decoded == Self.text) == (length >= Self.smallestDecodablePrefix),
-                    "length=\(length): 境界の想定が崩れている")
+                    "length=\(length): the boundary assumption no longer holds")
         }
     }
 
-    /// 復号が成立する境界そのものを明示的に固定する。
-    @Test("復号が成立する最小長の境界")
+    /// Pins the decoding boundary itself.
+    @Test("The smallest decodable prefix boundary")
     func decodingBoundaryIsPinned() {
         #expect(LZString.decompressFromBase64(input: String(Self.validBase64.prefix(Self.smallestDecodablePrefix))) == Self.text)
         #expect(LZString.decompressFromBase64(input: String(Self.validBase64.prefix(Self.smallestDecodablePrefix - 1))) == "")
     }
 
-    /// 入力の末尾ちょうどでビットを使い切る正常な入力が、
-    /// 境界チェックの追加で壊れていないことを確認する。
-    @Test("境界ちょうどで終わる正常な入力は復号できる")
+    /// Confirms the added bounds checks did not break valid input that consumes its last
+    /// bit exactly at the end of the stream.
+    @Test("Valid input ending exactly on a boundary still decodes")
     func validInputAtExactBufferBoundaryStillDecodes() {
         #expect(LZString.decompressFromBase64(input: Self.validBase64) == Self.text)
 

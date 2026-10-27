@@ -1,19 +1,16 @@
 #!/usr/bin/env node
 //
-// Tests/Resources/js_differential.json を生成する。
-// Generates the JS differential fixture used by JavaScriptDifferentialTests.
+// Generates Tests/Resources/js_differential.json, the differential fixture used by
+// JavaScriptDifferentialTests.
 //
-// このスクリプトは `swift test` からは実行されない。フィクスチャはリポジトリに
-// コミットされており、通常のテストはネットワークも Node も必要としない。
 // Not run by `swift test`. The fixture is committed; normal test runs need neither
 // Node nor network access.
 //
-// 使い方 / Usage:
+// Usage:
 //   cd Scripts && npm install lz-string@1.5.0 && node generate-js-differential-fixture.js
 //
-// 辞書ビット幅 (numBits) が増加する位置は、参照実装を**実行時にメモリ上で計装**して
-// 特定する。リポジトリ内の参照実装を書き換えることはしない。
-// Width transitions are located by instrumenting the reference implementation in memory.
+// Width transitions are located by instrumenting the reference implementation in memory
+// at run time; nothing in the repository's copy of it is modified.
 
 const fs = require("fs");
 const path = require("path");
@@ -30,15 +27,15 @@ const sha256 = crypto.createHash("sha256").update(fs.readFileSync(refPath)).dige
 const version = require("lz-string/package.json").version;
 
 if (version !== EXPECTED_VERSION || sha256 !== EXPECTED_SHA256) {
-  console.error(`参照実装が想定と異なります / reference implementation mismatch:
+  console.error(`Reference implementation mismatch:
   version: ${version} (expected ${EXPECTED_VERSION})
   sha256 : ${sha256} (expected ${EXPECTED_SHA256})
-固定値を更新する場合は、差分を確認したうえでこのスクリプトの定数も更新してください。`);
+To update the pinned values, review the difference and update the constants above.`);
   process.exit(1);
 }
 
-// numBits の増加箇所に記録フックを挿入した版をメモリ上で読み込む。
-// 主ループ側は入力インデックス ii を、末尾処理側は -1 を記録する。
+// Load an in-memory copy with a recording hook inserted where numBits grows. The main
+// loop records the input index ii; the tail handling records -1.
 const instrumentedSource = source
   .replace(/(\n\s*)context_numBits\+\+;(\s*\n\s*\})/g, (m, pre, post) => `${pre}context_numBits++; if (globalThis.__lzTrack) globalThis.__lzTrack(typeof ii === "number" ? ii : -1, context_numBits);${post}`);
 
@@ -49,10 +46,10 @@ instrumented._compile(instrumentedSource, refPath);
 const lzInstrumented = instrumented.exports;
 const lz = require("lz-string");
 
-// 計装版が本家と同じ出力を出すことを確認する。
+// Confirm the instrumented build produces the same output as the original.
 for (const probe of ["", "a", "aaa", "hello world", "Lorem ipsum dolor sit amet"]) {
   if (lz.compressToBase64(probe) !== lzInstrumented.compressToBase64(probe)) {
-    console.error("計装版の出力が本家と一致しません / instrumented build diverges");
+    console.error("Instrumented build diverges from the original");
     process.exit(1);
   }
 }
@@ -99,7 +96,7 @@ const hasLoneSurrogate = s => {
 
 function expectations(id, baseId, prefixLength, note, width, position) {
   const s = bases[baseId].slice(0, prefixLength);
-  // Swift の String は孤立サロゲートを保持できないため、割れた prefix は採用しない。
+  // A Swift String cannot hold a lone surrogate, so a prefix that splits a pair is skipped.
   if (hasLoneSurrogate(s)) return null;
   if (lz.decompressFromBase64(lz.compressToBase64(s)) !== s) throw new Error("js roundtrip failed: " + id);
   return {
@@ -115,19 +112,20 @@ function expectations(id, baseId, prefixLength, note, width, position) {
 const cases = [];
 const exercised = {};
 
-// 各幅に初到達する位置の 直前 / その位置 / 直後。
-// 入力長と辞書サイズは一致しないため、位置は必ず参照実装側の計装で特定する。
+// The position just before, at, and just after the first time each width is reached.
+// Input length and dictionary size do not correspond, so positions always come from the
+// instrumented reference implementation.
 for (const baseId of ["repeatedPattern", "jsonLike", "highEntropy"]) {
   const firstAt = {};
   for (const x of transitions(bases[baseId])) if (firstAt[x.nb] === undefined && x.ii >= 0) firstAt[x.nb] = x.ii;
 
   for (const [nb, ii] of Object.entries(firstAt)) {
-    if (Number(nb) < 4) continue; // 幅 3 は入力 1〜3 文字で自明に通過する
+    if (Number(nb) < 4) continue; // Width 3 is reached trivially within the first few characters.
     (exercised[baseId] ||= []).push(Number(nb));
     for (const [label, len] of [["before", ii], ["at", ii + 1], ["after", ii + 2]]) {
       if (len < 1 || len > bases[baseId].length) continue;
       const c = expectations(`${baseId}-w${nb}-${label}`, baseId, len,
-        `numBits ${nb} への成長${label === "before" ? "直前" : label === "at" ? "時点" : "直後"}`, Number(nb), label);
+        `growth to numBits ${nb}, ${label}`, Number(nb), label);
       if (c) cases.push(c);
     }
   }
@@ -136,7 +134,7 @@ for (const baseId of ["repeatedPattern", "jsonLike", "highEntropy"]) {
 for (const baseId of Object.keys(bases)) {
   const widths = [...new Set(transitions(bases[baseId]).map(x => x.nb))];
   const c = expectations(`${baseId}-full`, baseId, bases[baseId].length,
-    `全長。到達幅 ${JSON.stringify(widths)}`, Math.max(...widths), "full");
+    `full length; widths reached ${JSON.stringify(widths)}`, Math.max(...widths), "full");
   if (c) cases.push(c);
 }
 

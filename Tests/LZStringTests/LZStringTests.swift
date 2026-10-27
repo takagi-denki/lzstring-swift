@@ -6,13 +6,13 @@ import Foundation
 struct LZStringTests {
     static let text = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum."
     
-    // テストデータの読み込み用ヘルパー
+    // Helper for loading test fixtures.
     func getTestDataURL(name: String) -> URL {
-        // CI環境(ubuntu-latest)やローカルでの実行を考慮し、プロジェクトルートからの相対パスを使用
+        // Use a path relative to the package root so it works both in CI and locally.
         return URL(fileURLWithPath: "Tests/Resources/\(name).txt")
     }
 
-    @Test("標準的な圧縮と展開の検証")
+    @Test("Standard compression and decompression")
     func compressAndDecompress() throws {
         let compressUrl = getTestDataURL(name: "compress")
         let expectedData = try Data(contentsOf: compressUrl)
@@ -24,7 +24,7 @@ struct LZStringTests {
         #expect(decompressed == Self.text)
     }
 
-    @Test("絵文字の圧縮と展開", arguments: [
+    @Test("Emoji compression and decompression", arguments: [
         ("🥺", "nwbi9do=")
     ])
     func emojiTests(input: String, expectedBase64: String) {
@@ -44,20 +44,20 @@ struct LZStringTests {
         #expect(decompressedData == input)
     }
 
-    @Test("UTF16形式の圧縮と展開")
+    @Test("UTF16 format compression and decompression")
     func utf16Tests() throws {
         let url = getTestDataURL(name: "compress_utf16")
         let expectedUtf16 = try String(contentsOf: url, encoding: .utf16LittleEndian)
         
         let compressed = LZString.compressToUTF16(input: Self.text)
-        // String の == は正規等価で比較するため、UTF-16 コードユニット列で突き合わせる (issue #40)。
+        // String == compares by canonical equivalence, so compare code units (issue #40).
         #expect(Array(compressed.utf16) == Array(expectedUtf16.utf16))
         
         let decompressed = LZString.decompressFromUTF16(input: compressed)
         #expect(Array(decompressed.utf16) == Array(Self.text.utf16))
     }
 
-    @Test("Base64形式の圧縮と展開")
+    @Test("Base64 format compression and decompression")
     func base64Tests() throws {
         let url = getTestDataURL(name: "compress_base64")
         let expectedBase64 = try String(contentsOf: url, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -69,7 +69,7 @@ struct LZStringTests {
         #expect(decompressed == Self.text)
     }
 
-    @Test("URI形式の圧縮と展開")
+    @Test("URI format compression and decompression")
     func uriTests() throws {
         let url = getTestDataURL(name: "compress_uri")
         let expectedUri = try String(contentsOf: url, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -81,7 +81,7 @@ struct LZStringTests {
         #expect(decompressed == Self.text)
     }
 
-    @Test("UInt8Array形式の圧縮と展開")
+    @Test("UInt8Array format compression and decompression")
     func uint8ArrayTests() throws {
         let url = getTestDataURL(name: "compress_uint8")
         let data = try Data(contentsOf: url)
@@ -94,9 +94,9 @@ struct LZStringTests {
         #expect(decompressed == Self.text)
     }
 
-    /// 空文字列の圧縮は終端コードを出力する（本家 JS 版と同じ挙動、issue #33）。
-    /// 展開側は空入力に対して空文字列を返す。
-    @Test("空文字列のハンドリング")
+    /// Compressing an empty string emits the end-of-stream code, matching the original
+    /// JavaScript implementation (issue #33). Decompressors return "" for empty input.
+    @Test("Empty string handling")
     func emptyInputTests() {
         #expect([UInt8](LZString.compress(input: "") as Data) == [0, 64])
         #expect(LZString.compressToUTF16(input: "") == "\u{2020} ")

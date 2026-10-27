@@ -258,8 +258,6 @@ public func compress(input: String) -> Data {
 
 // TODO: Change Generics
 private func _compress<T : RangeReplaceableCollection>(input: String, bitPerChar: Int, charFromInt: GetCharFromInt<T>) -> T {
-    // 空文字列でも早期 return しない。本家 JS 版は空文字列と null を区別し、
-    // 空文字列に対しても終端コードを出力する (issue #33)。
     // No early return for an empty string: the original JS distinguishes "" from null
     // and still emits the end-of-stream code for "" (issue #33).
     var value = 0
@@ -554,11 +552,9 @@ public func decompress(input: Data) -> String {
         return ""
     }
 
-    // Data はスライスすると startIndex が 0 から始まらない（dropFirst、パケットの
-    // ヘッダー除去など）。0 始まりを前提に添字アクセスすると範囲外になるため、
-    // startIndex からの相対位置で読む。コピーは不要。
-    // A sliced Data does not start at index 0, so offsets are taken relative to
-    // startIndex rather than assuming zero-based indices. No copy required.
+    // A sliced Data does not start at index 0 (dropFirst, stripping a packet header),
+    // so offsets are taken relative to startIndex rather than assuming zero-based
+    // indices. No copy required.
     let start = input.startIndex
 
     return _decompress(length: input.count / 2, resetValue: 32768, nextValue: {i in
@@ -577,27 +573,20 @@ private func _decompress(length: Int, resetValue: Int, nextValue: @escaping GetN
     var c : UInt64 = 0
     var entry : [UInt64] = []
     var w : [UInt64] = []
-    // 復号結果は UTF-16 コードユニットのまま貯める。バイト列に落として
-    // String(data:encoding:.utf16) で復元すると、先頭の U+FEFF / U+FFFE が
-    // BOM として解釈されて失われる (issue #23)。
     // Accumulate UTF-16 code units directly: going through bytes and
-    // String(data:encoding:.utf16) makes a leading U+FEFF / U+FFFE be eaten as a BOM.
+    // String(data:encoding:.utf16) makes a leading U+FEFF / U+FFFE be eaten as a BOM
+    // and lost (issue #23).
     var result : [UInt16] = []
-    // position = 0 は「バッファが空」を意味する。最初の読み出しは _slide まで遅延させ、
-    // 入力長が 0 のときに範囲外アクセスが起きないようにする。
     // position = 0 means "buffer empty"; the first read is deferred to _slide so that
     // a zero-length input never indexes out of bounds.
     var data = (value: 0, position: 0, index: 0)
 
-    /// 要求されたビット数を読み出す。入力が尽きている場合は nil を返す。
     /// Reads `maxpower` worth of bits, or returns nil when the input is exhausted.
     func _slide(data: inout DecompressData, maxpower: Int) -> Int? {
         var bits = 0
         var power = 1
 
         while power != maxpower {
-            // 補充は実際に必要になった時点で行う。末尾ちょうどで終わる正常な入力では
-            // 余分な読み出しが発生しない。
             // Refill only when a bit is actually needed, so a stream that ends exactly
             // on a buffer boundary never triggers a read past the end.
             if data.position == 0 {
@@ -626,13 +615,10 @@ private func _decompress(length: Int, resetValue: Int, nextValue: @escaping GetN
 
     next = header
 
-    // 先頭タグは 0 = 8 ビットリテラル、1 = 16 ビットリテラル、2 = 終端のみが有効。
-    // 3 は不正な入力であり、文字として扱ってはいけない。以前は分岐が無く、
-    // c が初期値 0 のまま後続に落ちて NUL を含む文字列を返していた (issue #57)。
-    //
     // The initial tag is 0 = 8-bit literal, 1 = 16-bit literal, 2 = end of stream.
-    // Tag 3 is invalid; it previously fell through with the initial c == 0 and produced
-    // a fabricated NUL character. A switch keeps the handling exhaustive.
+    // Tag 3 is invalid and must not be treated as a character; it previously fell through
+    // with the initial c == 0 and produced a fabricated NUL character (issue #57).
+    // A switch keeps the handling exhaustive.
     switch next {
     case 0:
         guard let literal = _slide(data: &data, maxpower: 2 << 7) else {
@@ -647,7 +633,7 @@ private func _decompress(length: Int, resetValue: Int, nextValue: @escaping GetN
 
         c = UInt64(literal)
     case 2:
-        // 空のストリーム。
+        // An empty stream.
         return ""
     default:
         return ""
@@ -658,7 +644,6 @@ private func _decompress(length: Int, resetValue: Int, nextValue: @escaping GetN
     result.append(contentsOf: w.map({ UInt16($0) }))
 
     while true {
-        // 入力の枯渇は _slide が検出する。
         // Exhaustion is detected by _slide itself.
         guard let code = _slide(data: &data, maxpower: 2 << (numBits - 1)) else {
             return ""
@@ -697,10 +682,8 @@ private func _decompress(length: Int, resetValue: Int, nextValue: @escaping GetN
             entry = e
         } else {
             if c == dictSize {
-                // LZW の KwKwK ケース。直前の語 w に w 自身の先頭を足したものが正解で、
-                // entry は前回の反復の値（初回は空）なので参照してはいけない。
                 // LZW KwKwK case: the entry is w + w[0]; `entry` still holds the
-                // previous iteration's value (empty on the first pass).
+                // previous iteration's value (empty on the first pass) and must not be used.
                 var tmp = Array(w)
                 tmp.append(w[0])
                 entry = tmp
