@@ -64,8 +64,23 @@ let benchmarks: @Sendable () -> Void = {
     //
     // Only throughput p50 gates. The others are recorded for information but not checked:
     // wall clock and memory swing widely even for identical code.
+    //
+    // 許容差は 15%。throughput は K 単位に正規化された**整数**として保存されるため、
+    // p50 が 1〜2 単位ずれるだけで無視できない差になる（issue #56）。
+    //
+    //   保存値 39K → 1 単位 2.6% / 2 単位 5.1%
+    //   保存値 23K → 1 単位 4.3% / 2 単位 8.7%
+    //
+    // 実測では、コードを一切変えずに 5% 閾値で 3 回中 2 回失敗した（差 5% と 7%）。
+    // 15% は量子化の上限 8.7% と観測ノイズに対する余裕を取った値で、
+    // 偽陽性を無くしつつ明確な劣化（実測で 41%）は引き続き検出する。
+    //
+    // The tolerance is 15%. Throughput percentiles are stored as integers after unit
+    // normalisation, so a one- or two-unit jitter in p50 is already several percent.
+    // At 5% an unchanged tree failed two runs out of three; 15% clears the 8.7%
+    // quantisation ceiling and the observed noise while still catching real regressions.
     let thresholds: [BenchmarkMetric: BenchmarkThresholds] = [
-        .throughput: BenchmarkThresholds(relative: [.p50: 5.0]),
+        .throughput: BenchmarkThresholds(relative: [.p50: 15.0]),
         .wallClock: BenchmarkThresholds(relative: [:], absolute: [:]),
         .mallocCountTotal: BenchmarkThresholds(relative: [:], absolute: [:]),
         .allocatedResidentMemory: BenchmarkThresholds(relative: [:], absolute: [:]),
