@@ -31,7 +31,9 @@ swift package --allow-writing-to-package-directory benchmark baseline check <nam
    - 展開 API の空入力は空文字列を返す（JS は null だが Swift の戻り値型は `String`）。これは圧縮側とは別の規約。
    - `Tests/Resources/js_differential.json` は辞書ビット幅の成長境界を狙った JS 差分コーパス（issue #41）。参照実装のバージョンと sha256、入力生成の seed を内部に記録している。再生成は `Scripts/generate-js-differential-fixture.js`（Node が必要）で、`swift test` からは実行されない。**テストが落ちたときに再生成して通してはいけない。**
 2. **`swift test` はパッケージルートから実行する。** テストは `URL(fileURLWithPath: "Tests/Resources/...")` という相対パスでフィクスチャを読む（`Bundle.module` ではない）。カレントディレクトリが違うと読み込みに失敗する。
-3. **性能リグレッションは PR をブロックする。** `.github/workflows/benchmark.yml` が main をベースラインにして `throughput` p50 の -5% 超の劣化を落とす。`Sources/**` を触ったらローカルでも `swift package benchmark` で確認する。
+3. **性能リグレッションは PR をブロックする。** `.github/workflows/benchmark.yml` が PR の base コミットをベースラインにして、`throughput` p50 が **15% 超**低下した場合に落とす。`Sources/**` を触ったらローカルでも `swift package benchmark` で確認する。
+   - 閾値が 15% なのは測定の都合による（issue #56）。throughput のパーセンタイルは K 単位に正規化された整数として保存されるため、保存値 23K なら 1 単位が 4.3%、2 単位で 8.7% に相当する。**5% ではコードを変えなくても 3 回中 2 回失敗した**ため、偽陽性を無くせる水準まで上げてある。閾値を下げたい場合は、先に測定の分解能を上げること。
+   - 判定対象は `throughput` p50 のみ。壁時計時間・malloc・メモリは記録するが判定しない（同一コードでメモリが 40% 振れた実績がある）。
 4. **移植性を壊さない。** CI は macOS / Linux / Windows に加え musl static SDK でもビルドする。プラットフォーム依存 API や Darwin 専用 API は使わない（現状の依存は `Foundation` のみ）。
 
 ## API の形 / API shape
