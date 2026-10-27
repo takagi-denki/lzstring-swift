@@ -2,17 +2,17 @@ import Testing
 import Foundation
 @testable import LZString
 
-/// Issue #42 — 全展開形式の切り詰め・不正入力テスト。
+/// Issue #42 — truncation and malformed-input coverage for every decoder.
 ///
-/// #21 / #32 の回帰テストを置き換えるものではなく、網羅範囲を広げるもの。
-/// 既存スイートは Base64 の 1 ペイロードだけを全長で切り詰めていた。
+/// This widens coverage rather than replacing the #21 / #32 regressions; the existing
+/// suite exhaustively truncated only one Base64 payload.
 ///
-/// 読み出し境界は形式ごとに異なる。Base64 / URI は文字、UTF16 は
-/// **コードユニット**（`String.prefix` は Character 単位で数えるため使わない）、
-/// Data / UInt8Array はバイト。
+/// Read boundaries differ per format: characters for Base64 and URI, **code units** for
+/// UTF16 (`String.prefix` counts Characters, so it is not used), bytes for Data and
+/// UInt8Array.
 ///
-/// 期待値は pieroxy/lz-string 1.5.0 を Node で実行した固定値。
-@Suite("不正・切り詰め入力の網羅 / Malformed and truncated input coverage")
+/// Expected values are fixed outputs from lz-string 1.5.0 under Node.
+@Suite("Malformed and truncated input coverage")
 struct MalformedInputTests {
     struct Vector: Sendable, CustomStringConvertible {
         let input: String
@@ -20,7 +20,8 @@ struct MalformedInputTests {
         let uri: String
         let utf16Units: [UInt16]
         let uint8: [UInt8]
-        /// JS が非空を返す切り詰め長 -> その結果。記載のない長さは空文字列。
+        /// Truncation lengths at which JavaScript returns a non-empty result; any length
+        /// not listed decodes to an empty string.
         let jsNonEmpty: [String: [Int]]
 
         var description: String { input }
@@ -54,7 +55,7 @@ struct MalformedInputTests {
                jsNonEmpty: ["base64": [24], "uri": [24], "utf16": [10, 11], "uint8": [18]]),
     ]
 
-    /// 形式ごとの読み出し境界で切り詰める。
+    /// Truncates at the read boundary appropriate to each format.
     static func truncate(_ vector: Vector, _ format: String, _ n: Int) -> String {
         switch format {
         case "base64":
@@ -62,7 +63,7 @@ struct MalformedInputTests {
         case "uri":
             return LZString.decompressFromEncodedURIComponent(input: String(vector.uri.prefix(n)))
         case "utf16":
-            // String.prefix は Character 単位で数えるため、コードユニット単位で切る。
+            // String.prefix counts Characters, so slice by code unit instead.
             return LZString.decompressFromUTF16(input: String(decoding: Array(vector.utf16Units.prefix(n)), as: UTF16.self))
         case "uint8":
             return LZString.decompressFromUInt8Array(input: Array(vector.uint8.prefix(n)))
@@ -83,42 +84,39 @@ struct MalformedInputTests {
 
     static let formats = ["base64", "uri", "utf16", "uint8"]
 
-    /// 本ライブラリと本家 JS で結果が異なる既知の位置（方針として受け入れている差異）。
+    /// Known positions where this library is stricter than the JavaScript original,
+    /// accepted as a documented policy decision.
     ///
-    /// JS は入力末尾を超えた読み出しを NaN 経由で 0 ビットとして扱うため、
-    /// 終端コードの末尾ビットが欠けていても復号が成立する。本ライブラリは #21 以降、
-    /// 入力が尽きた時点で失敗する（空文字列）。完全な圧縮出力では差は出ず、
-    /// 意図的に切り詰めた入力でのみ観測される。
-    ///
-    /// Known positions where this library is stricter than the JS original: JS treats reads
-    /// past the end as zero bits and can still finish, while this library fails once the
-    /// input is exhausted (#21). Only observable on deliberately truncated input.
+    /// JavaScript treats reads past the end as zero bits and can still finish, so it
+    /// decodes even when the last bit of the end-of-stream code is missing. Since #21
+    /// this library fails as soon as the input is exhausted. Complete compressed output
+    /// shows no difference; this is only observable on deliberately truncated input.
     static let stricterThanJavaScript: Set<String> = [
         "a/base64@2",
         "a/uri@2",
         "aaa/utf16@1",
     ]
 
-    // MARK: - 網羅的な切り詰め
+    // MARK: - Exhaustive truncation
 
-    /// 切り詰めた入力は「完全に復元できる」か「空文字列」のどちらかで、
-    /// **途中まで復号された壊れたテキストを返さない**。
-    /// 1 つでもトラップすればテストプロセスごと落ちるため、安全性の検証も兼ねる。
-    @Test("全形式・全長の切り詰めが安全で、部分的な文字列を返さない", arguments: vectors)
+    /// A truncated input yields either the full text or an empty string and **never
+    /// partially decoded, corrupted text**. A single trap would take down the test
+    /// process, so this doubles as the safety check.
+    @Test("Every truncation is safe and never partial", arguments: vectors)
     func everyTruncationIsSafeAndNeverPartial(vector: Vector) {
         for format in Self.formats {
             for n in 0...Self.total(vector, format) {
                 let decoded = Self.truncate(vector, format, n)
 
                 #expect(decoded.isEmpty || decoded == vector.input,
-                        "\(vector.input)/\(format)@\(n): 部分的な結果 \(decoded.debugDescription)")
+                        "\(vector.input)/\(format)@\(n): partial result \(decoded.debugDescription)")
             }
         }
     }
 
-    /// 全形式・全長について本家 JS の結果と突き合わせる。
-    /// 一致しない位置は stricterThanJavaScript に明示したものだけであることを保証する。
-    @Test("切り詰め結果が JS と一致する（既知の差異を除く）", arguments: vectors)
+    /// Compares against the JavaScript result at every length in every format, and
+    /// guarantees the only disagreements are the ones listed in stricterThanJavaScript.
+    @Test("Truncation results match JavaScript, except the known differences", arguments: vectors)
     func truncationMatchesJavaScript(vector: Vector) {
         for format in Self.formats {
             let jsDecodes = Set(vector.jsNonEmpty[format] ?? [])
@@ -128,12 +126,13 @@ struct MalformedInputTests {
                 let decoded = Self.truncate(vector, format, n)
 
                 if Self.stricterThanJavaScript.contains(key) {
-                    #expect(decoded.isEmpty, "\(key): 既知の差異（JS は復号成立、本実装は失敗）の想定が崩れている")
+                    #expect(decoded.isEmpty, "\(key): the known difference no longer holds (JavaScript decodes, this library fails)")
                     continue
                 }
 
-                // JS が例外を投げる位置（UInt8Array の奇数バイト長）では JS 側に期待値がない。
-                // 本実装はトラップせず値を返す契約なので、ここでは一致を要求しない。
+                // Where JavaScript throws (odd byte lengths for UInt8Array) there is no
+                // expectation; this library contracts to return a value without trapping,
+                // so agreement is not required here.
                 let jsThrows = (format == "uint8" && n % 2 == 1 && n > 0)
                 if jsThrows { continue }
 
@@ -143,10 +142,9 @@ struct MalformedInputTests {
         }
     }
 
-    /// 復号が成立する最小長と、その 1 つ手前を名前付きで固定する。
-    /// 「70 文字以上なら全文」のようなマジックナンバーの代わりに、
-    /// 形式ごとの実際の境界を記録する。
-    @Test("復号が成立する最小長の境界を固定する", arguments: vectors)
+    /// Pins the smallest decodable length and the one below it by name, recording the
+    /// real per-format boundary instead of a magic number such as "70 or more".
+    @Test("The smallest decodable length is pinned", arguments: vectors)
     func decodingThresholdIsPinned(vector: Vector) {
         for format in Self.formats {
             guard let smallest = (vector.jsNonEmpty[format] ?? []).min() else { continue }
@@ -155,19 +153,20 @@ struct MalformedInputTests {
             if Self.stricterThanJavaScript.contains(key) { continue }
 
             #expect(Self.truncate(vector, format, smallest) == vector.input,
-                    "\(key): 最小長で復号できるはず")
+                    "\(key): should decode at the smallest length")
 
             if smallest > 0 {
                 #expect(Self.truncate(vector, format, smallest - 1).isEmpty,
-                        "\(vector.input)/\(format)@\(smallest - 1): 境界の 1 つ手前は失敗するはず")
+                        "\(vector.input)/\(format)@\(smallest - 1): one below the boundary should fail")
             }
         }
     }
 
-    // MARK: - Data スライス
+    // MARK: - Data slices
 
-    /// 空・1 バイト・奇数バイト・startIndex が 0 でないスライス。#32 の回帰を保ちつつ範囲を広げる。
-    @Test("Data の退化したスライスがトラップしない", arguments: vectors)
+    /// Empty, one-byte, odd-length and non-zero-startIndex slices. Widens coverage while
+    /// keeping the #32 regression.
+    @Test("Degenerate Data slices do not trap", arguments: vectors)
     func degenerateDataSlices(vector: Vector) {
         let encoded: Data = LZString.compress(input: vector.input)
 
@@ -182,30 +181,30 @@ struct MalformedInputTests {
             #expect(slice.startIndex == offset)
             #expect(LZString.decompress(input: slice) == vector.input)
 
-            // スライスをさらに全長で切り詰めてもトラップしない。
+            // Truncating the slice to every length must not trap either.
             for length in 0...encoded.count {
                 let truncated = slice.prefix(length)
                 let decoded = LZString.decompress(input: truncated)
                 #expect(decoded.isEmpty || decoded == vector.input,
-                        "offset=\(offset) length=\(length): 部分的な結果 \(decoded.debugDescription)")
+                        "offset=\(offset) length=\(length): partial result \(decoded.debugDescription)")
             }
         }
 
-        // 奇数バイト長
+        // Odd byte lengths.
         for odd in stride(from: 1, to: encoded.count, by: 2) {
             let decoded = LZString.decompress(input: encoded.prefix(odd))
             #expect(decoded.isEmpty || decoded == vector.input)
         }
     }
 
-    // MARK: - 決定的な変異
+    // MARK: - Deterministic mutations
 
-    /// 先頭タグ・辞書コード・終端ビットの改変、英数字以外の文字、低い UTF16 値など。
-    /// **すべての変異が無効とは限らない**（別の有効なテキストを表す場合がある）ため、
-    /// トラップしないことと、結果が有限であることだけを要求する。
-    @Test("決定的な変異入力がトラップもハングもしない", arguments: vectors)
+    /// Altered initial tags, dictionary codes and terminal bits, characters outside the
+    /// alphabet, and low UTF16 units. **Not every mutation is invalid** — some encode
+    /// different valid text — so this only requires that nothing traps or hangs.
+    @Test("Deterministic mutations neither trap nor hang", arguments: vectors)
     func boundedDeterministicMutations(vector: Vector) {
-        // Base64 / URI アルファベット外の文字を各位置に注入
+        // Inject characters outside the Base64 / URI alphabet at various positions.
         for (index, intruder) in ["あ", "\u{0}", "~", "\u{FFFF}", " ", "%"].enumerated() {
             let position = vector.base64.isEmpty ? 0 : index % vector.base64.count
             var mutated = Array(vector.base64)
@@ -217,7 +216,7 @@ struct MalformedInputTests {
             _ = LZString.decompressFromEncodedURIComponent(input: String(mutatedURI))
         }
 
-        // UTF16 形式に低いコードユニットを注入（nextValue が負になりうる経路）
+        // Inject low code units into the UTF16 format, where nextValue can go negative.
         for unit in [UInt16(0), 1, 31] {
             var units = vector.utf16Units
             if !units.isEmpty {
@@ -226,16 +225,16 @@ struct MalformedInputTests {
             }
         }
 
-        // 各バイトの最下位ビットを反転（終端ビットの改変を含む）
+        // Flip the lowest bit of each byte, which includes altering the terminal bits.
         for index in vector.uint8.indices {
             var bytes = vector.uint8
             bytes[index] ^= 0x01
             let decoded = LZString.decompressFromUInt8Array(input: bytes)
-            // 別の有効なテキストになりうるので内容は問わない。
+            // The result may be different valid text, so its content is not asserted.
             _ = decoded
         }
 
-        // 先頭タグの改変
+        // Alter the initial tag.
         if !vector.uint8.isEmpty {
             for pattern in [UInt8(0x00), 0xFF, 0x80] {
                 var bytes = vector.uint8
@@ -245,11 +244,11 @@ struct MalformedInputTests {
         }
     }
 
-    // MARK: - 有効な入力の保護
+    // MARK: - Protecting valid input
 
-    /// 境界ちょうどで終わる正常な入力と、URI の '+' が空白に変換された入力が
-    /// 引き続き受理されることを保証する（防御を固めた結果これらを弾かないこと）。
-    @Test("有効な入力の正規化が壊れていない", arguments: vectors)
+    /// Guarantees that valid input ending exactly on a boundary, and URI input whose '+'
+    /// became a space, are still accepted — hardening must not reject them.
+    @Test("Normalisation of valid input still works", arguments: vectors)
     func validInputNormalisationIsPreserved(vector: Vector) {
         #expect(LZString.decompressFromBase64(input: vector.base64) == vector.input)
         #expect(LZString.decompressFromEncodedURIComponent(input: vector.uri) == vector.input)
@@ -257,19 +256,19 @@ struct MalformedInputTests {
         #expect(LZString.decompressFromUInt8Array(input: vector.uint8) == vector.input)
         #expect(LZString.decompress(input: LZString.compress(input: vector.input) as Data) == vector.input)
 
-        // URL デコーダが '+' を空白に変える経路。
+        // The path where a URL decoder turns '+' into a space.
         let spaced = vector.uri.replacingOccurrences(of: "+", with: " ")
         #expect(LZString.decompressFromEncodedURIComponent(input: spaced) == vector.input,
-                "\(vector.input): '+' を空白にした URI が復元できない")
+                "\(vector.input): a URI with '+' replaced by a space failed to decode")
     }
 
-    /// '+' を実際に含むペイロードで、空白置換の経路が本当に働いていることを確かめる。
-    /// （'+' を含まない入力では置換が何もしないため、保護になっていない）
-    @Test("'+' を含む URI ペイロードが空白経由で復元できる")
+    /// Exercises the space-replacement path with a payload that actually contains '+';
+    /// with an input that has none, the replacement does nothing and protects nothing.
+    @Test("A URI payload containing '+' round-trips through a space")
     func uriPayloadContainingPlusRoundTripsThroughSpace() throws {
         let vector = try #require(Self.vectors.first { $0.uri.contains("+") })
 
-        #expect(vector.uri.contains("+"), "このベクタは '+' を含んでいる必要がある")
+        #expect(vector.uri.contains("+"), "this vector must contain '+'")
 
         let spaced = vector.uri.replacingOccurrences(of: "+", with: " ")
         #expect(spaced != vector.uri)

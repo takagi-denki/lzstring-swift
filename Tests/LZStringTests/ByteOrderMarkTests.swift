@@ -2,18 +2,13 @@ import Testing
 import Foundation
 @testable import LZString
 
-/// Issue #23 の回帰テスト。
-/// 復号結果をバイト列に落として `String(data:encoding:.utf16)` に渡していたため、
-/// 先頭の U+FEFF が BOM として解釈されて失われていた。
-/// 先頭が U+FFFE の場合はリトルエンディアン BOM と解釈され、以降のバイト順も反転していた。
-///
 /// Regression tests for issue #23. The decoded units used to be serialised to bytes and
 /// handed to `String(data:encoding:.utf16)`, which ate a leading U+FEFF as a BOM — and
 /// read a leading U+FFFE as a little-endian BOM, flipping the byte order of the rest.
 ///
-/// 期待値は本家 JavaScript 実装 (pieroxy/lz-string 1.5.0) の出力。
-/// Expected values are produced by the original JavaScript implementation.
-@Suite("BOM 文字の保持 / Byte order mark round trip")
+/// Expected values are produced by the original JavaScript implementation
+/// (pieroxy/lz-string 1.5.0).
+@Suite("Byte order mark round trip")
 struct ByteOrderMarkTests {
     static let cases: [(input: String, base64: String)] = [
         ("\u{FEFF}abc", "v9/EMEYMZA=="),
@@ -26,7 +21,7 @@ struct ByteOrderMarkTests {
         ("abc", "IYIwxkA="),
     ]
 
-    @Test("Issue #23 の最小再現: 先頭の U+FEFF が残る")
+    @Test("Issue #23 minimal reproduction: a leading U+FEFF survives")
     func minimalReproduction() {
         let input = "\u{FEFF}abc"
         let output = LZString.decompressFromBase64(input: LZString.compressToBase64(input: input))
@@ -35,9 +30,9 @@ struct ByteOrderMarkTests {
         #expect(output == input)
     }
 
-    /// 先頭が U+FFFE の場合、以前はリトルエンディアン BOM と誤認され、
-    /// 残りの文字のバイト順まで反転していた。
-    @Test("先頭の U+FFFE でバイト順が反転しない")
+    /// A leading U+FFFE used to be mistaken for a little-endian BOM, which also
+    /// reversed the byte order of everything after it.
+    @Test("A leading U+FFFE does not reverse the byte order")
     func leadingReversedByteOrderMark() {
         let input = "\u{FFFE}abc"
         let output = LZString.decompressFromBase64(input: LZString.compressToBase64(input: input))
@@ -46,13 +41,13 @@ struct ByteOrderMarkTests {
         #expect(output == input)
     }
 
-    @Test("圧縮結果が JS 版と一致する", arguments: cases)
+    @Test("Compressed output matches JavaScript", arguments: cases)
     func matchesJavaScriptOutput(input: String, expectedBase64: String) {
         #expect(LZString.compressToBase64(input: input) == expectedBase64)
     }
 
-    /// 生の String 形式はサロゲートを U+FFFD に置換する既知の不具合 (issue #22) があるため対象外。
-    @Test("可逆な全形式で往復する", arguments: cases)
+    /// The raw String format is excluded: it replaces surrogates with U+FFFD (issue #22).
+    @Test("Round-trips through every lossless format", arguments: cases)
     func roundTripsThroughEveryFormat(input: String, expectedBase64: String) {
         #expect(LZString.decompressFromBase64(input: expectedBase64) == input)
         #expect(LZString.decompressFromEncodedURIComponent(input: LZString.compressToEncodedURIComponent(input: input)) == input)
@@ -63,8 +58,8 @@ struct ByteOrderMarkTests {
         #expect(LZString.decompress(input: compressed) == input)
     }
 
-    /// サロゲートペアと BMP 外の文字が壊れていないことを確認する。
-    @Test("サロゲートペアを含む文字列が往復する", arguments: ["🥺", "🥺🥺", "a🥺b", "\u{10FFFF}", "𝄞音符"])
+    /// Confirms surrogate pairs and characters outside the BMP are not damaged.
+    @Test("Strings containing surrogate pairs round-trip", arguments: ["🥺", "🥺🥺", "a🥺b", "\u{10FFFF}", "𝄞音符"])
     func supplementaryCharactersRoundTrip(input: String) {
         #expect(LZString.decompressFromBase64(input: LZString.compressToBase64(input: input)) == input)
 
@@ -72,8 +67,8 @@ struct ByteOrderMarkTests {
         #expect(LZString.decompress(input: compressed) == input)
     }
 
-    /// 不正な入力は引き続き空文字列を返す（issue #21 で定めた失敗値）。
-    @Test("不正な入力は空文字列のまま")
+    /// Malformed input still returns an empty string, the failure value set in issue #21.
+    @Test("Malformed input still returns an empty string")
     func malformedInputStillReturnsEmptyString() {
         #expect(LZString.decompressFromBase64(input: "!!!!") == "")
         #expect(LZString.decompressFromBase64(input: "A") == "")

@@ -2,28 +2,18 @@ import Testing
 import Foundation
 @testable import LZString
 
-/// Issue #41 — 辞書ビット幅 (numBits) の成長境界における JS 差分テスト。
-///
-/// 既存のゴールデンファイルはラテン文字 1 段落のみで、どの `numBits` 遷移を
-/// 踏んでいるかが記録されていなかった。Swift だけの往復テストは、圧縮と展開に
-/// 共通する誤りを見逃す。そこで本家 JavaScript 実装を独立したオラクルとして使う。
-///
-/// Differential tests against the original JavaScript implementation at dictionary
+/// Issue #41 — differential tests against the original JavaScript implementation at dictionary
 /// bit-width transitions. A Swift-only round trip can miss a bug shared by the
 /// compressor and the decompressor, so the reference acts as an independent oracle.
-///
-/// コーパスは `Tests/Resources/js_differential.json` にコミット済みで、
-/// 通常の `swift test` は Node もネットワークも必要としない。
-/// 再生成は `Scripts/generate-js-differential-fixture.js`（参照実装のバージョンと
-/// sha256、入力生成の seed を固定）。
 ///
 /// The corpus is committed, so a normal test run needs neither Node nor network.
 /// Regenerate with the script under `Scripts/`, which pins the reference version,
 /// its sha256, and the input-generation seed.
 ///
-/// **境界は参照実装側を計装して特定している。** 入力長と辞書サイズは一致しないため、
-/// 長さから推測はしない。
-@Suite("JS 差分テスト / JavaScript differential")
+/// **The transitions are located by instrumenting the reference implementation.**
+/// Input length and dictionary size do not correspond, so they are never inferred
+/// from length.
+@Suite("JavaScript differential")
 struct JavaScriptDifferentialTests {
     struct Corpus: Decodable {
         let seed: Int
@@ -51,14 +41,14 @@ struct JavaScriptDifferentialTests {
     }
 
     static let corpus: Corpus = {
-        // 読み込みに失敗する場合はパッケージルート以外から実行されている。
+        // A load failure means this was not run from the package root.
         let url = URL(fileURLWithPath: "Tests/Resources/js_differential.json")
         return try! JSONDecoder().decode(Corpus.self, from: Data(contentsOf: url))
     }()
 
     static let cases: [Case] = corpus.cases
 
-    // MARK: - 補助
+    // MARK: - Helpers
 
     static func units(fromHex hex: String) -> [UInt16] {
         stride(from: 0, to: hex.count, by: 4).map { offset in
@@ -76,17 +66,18 @@ struct JavaScriptDifferentialTests {
         }
     }
 
-    /// 参照実装と同じく UTF-16 コードユニット単位で切り出す。
+    /// Slices by UTF-16 code unit, exactly as the reference implementation does.
     static func input(for testCase: Case) -> String {
         let base = corpus.bases[testCase.baseId]!
         return String(decoding: Array(base.utf16.prefix(testCase.prefixLength)), as: UTF16.self)
     }
 
-    /// 一致判定と、失敗時に表示する診断（seed・ケース・形式・最初に相違した位置）を返す。
+    /// Returns the comparison result together with the diagnostic shown on failure
+    /// (seed, case, format and the first differing position).
     ///
-    /// `#expect` のコメント引数は autoclosure で失敗時しか評価されない。
-    /// 診断を組み立てる処理をそこに置くと実行されずカバレッジに現れないため、
-    /// 判定と診断をまとめて**常に評価する**形にしている。
+    /// The comment argument of `#expect` is an autoclosure evaluated only on failure.
+    /// Building the diagnostic there would leave those lines unexecuted and missing from
+    /// coverage, so the check and the diagnostic are **always evaluated** together.
     static func compare<T: Equatable>(_ actual: [T], _ expected: [T], case testCase: Case, format: String) -> (Bool, Comment) {
         let limit = min(actual.count, expected.count)
         var index = 0
@@ -98,17 +89,17 @@ struct JavaScriptDifferentialTests {
 
         let comment = Comment(rawValue: """
             seed=\(corpus.seed) case=\(testCase.id) format=\(format) \
-            (numBits \(testCase.width) への成長 \(testCase.position), \(testCase.note))
-            最初の相違: index \(index) — swift=\(actualValue) js=\(expectedValue) \
-            (swift \(actual.count) 要素 / js \(expected.count) 要素)
+            (growth to numBits \(testCase.width), position \(testCase.position): \(testCase.note))
+            first difference at index \(index) — swift=\(actualValue) js=\(expectedValue) \
+            (swift \(actual.count) elements / js \(expected.count) elements)
             """)
 
         return (matched, comment)
     }
 
-    // MARK: - コーパスの自己検証
+    // MARK: - Corpus self-checks
 
-    @Test("コーパスの前提が記録どおりである")
+    @Test("Corpus provenance matches what is recorded")
     func corpusMetadataIsPinned() {
         #expect(Self.corpus.referenceVersion == "1.5.0")
         #expect(Self.corpus.referenceSha256 == "550034b821027008776cb9bcd1700bb5d31e8b3de224cb130fc966a75dab0e5e")
@@ -116,25 +107,25 @@ struct JavaScriptDifferentialTests {
         #expect(!Self.cases.isEmpty)
     }
 
-    /// 実際に検証している numBits 遷移を記録として固定する。
+    /// Pins which numBits transitions this suite actually exercises.
     /// Documents which width transitions this suite actually exercises.
-    @Test("検証対象の辞書ビット幅が記録どおりである")
+    @Test("The exercised dictionary widths match what is recorded")
     func exercisedWidthsAreDocumented() {
         #expect(Self.corpus.exercised["repeatedPattern"] == [4, 5, 6, 7])
         #expect(Self.corpus.exercised["jsonLike"] == [4, 5, 6, 7, 8, 9, 10])
         #expect(Self.corpus.exercised["highEntropy"] == [4, 5, 6, 7, 8, 9, 10, 11])
 
-        // 各幅について 直前 / 時点 / 直後 が揃っていること。
+        // Every width must have the before / at / after positions.
         for width in 4...11 {
             let positions = Set(Self.cases.filter { $0.width == width }.map(\.position))
             #expect(positions.isSuperset(of: ["before", "at", "after"]),
-                    "numBits \(width): 直前/時点/直後 が揃っていない (\(positions.sorted()))")
+                    "numBits \(width): missing before/at/after (\(positions.sorted()))")
         }
     }
 
-    /// Swift 側で切り出した入力が、JS 側で期待値を生成したときと同一の
-    /// UTF-16 列であることを先に保証する。
-    @Test("切り出した入力が JS 側と同一である", arguments: cases)
+    /// Guarantees the slice taken on the Swift side has the same UTF-16 units as the
+    /// string the JavaScript side used when generating the expectations.
+    @Test("The reconstructed input matches the reference", arguments: cases)
     func reconstructedInputMatchesReference(testCase: Case) {
         let actual = Array(Self.input(for: testCase).utf16)
         let expected = Self.units(fromHex: testCase.inputUtf16Hex)
@@ -143,9 +134,9 @@ struct JavaScriptDifferentialTests {
         #expect(resultInputOK, resultInputComment)
     }
 
-    // MARK: - 圧縮の差分
+    // MARK: - Compression differential
 
-    @Test("圧縮結果が全形式で JS と一致する", arguments: cases)
+    @Test("Compressed output matches JavaScript in every format", arguments: cases)
     func compressionMatchesJavaScript(testCase: Case) {
         let input = Self.input(for: testCase)
 
@@ -167,8 +158,8 @@ struct JavaScriptDifferentialTests {
         let (resultUint8OK, resultUint8Comment) = Self.compare(uint8, expectedUInt8, case: testCase, format: "uint8Array")
         #expect(resultUint8OK, resultUint8Comment)
 
-        // Data はリトルエンディアンのバイト順を保つため、JS の UInt8Array を
-        // 2 バイトごとに入れ替えて比較する。
+        // Data keeps little-endian byte order, so each pair of the JavaScript
+        // UInt8Array is swapped before comparing.
         var expectedData = [UInt8]()
         for i in stride(from: 0, to: expectedUInt8.count, by: 2) {
             expectedData.append(expectedUInt8[i + 1])
@@ -179,11 +170,11 @@ struct JavaScriptDifferentialTests {
         #expect(resultDataOK, resultDataComment)
     }
 
-    // MARK: - 展開の差分
+    // MARK: - Decompression differential
 
-    /// JS が生成したペイロードを Swift で展開し、UTF-16 コードユニット単位で
-    /// 入力と完全一致することを確認する（正規等価では不十分、issue #40）。
-    @Test("JS が生成したペイロードを展開して完全一致する", arguments: cases)
+    /// Decompresses JavaScript-produced payloads and checks exact UTF-16 code-unit
+    /// equality with the input; canonical equivalence is not enough (issue #40).
+    @Test("JavaScript-produced payloads decode exactly", arguments: cases)
     func decodingJavaScriptPayloadsIsExact(testCase: Case) {
         let expected = Self.units(fromHex: testCase.inputUtf16Hex)
 

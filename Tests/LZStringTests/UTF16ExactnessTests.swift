@@ -2,24 +2,18 @@ import Testing
 import Foundation
 @testable import LZString
 
-/// Issue #40 — UTF-16 コードユニット単位の完全一致と Unicode 境界の互換性テスト。
-///
-/// Swift の `String` の `==` は**正規等価**で比較するため、実装が正規化を行って
-/// UTF-16 列を変えてしまっても往復テストが通ってしまう。
+/// Issue #40 — exact UTF-16 code-unit equality and Unicode boundary compatibility.
 ///
 ///     "\u{00E9}" == "e\u{0301}"                              // true
 ///     Array("\u{00E9}".utf16) == Array("e\u{0301}".utf16)     // false
 ///
-/// 本ライブラリが約束しているのは JS 版とのコードユニット／バイト単位の互換性であって、
-/// 見た目が等しいテキストではない。そこでこのスイートは一貫して
-/// `Array(decoded.utf16) == Array(input.utf16)` で検証する。
-///
 /// Swift's `String ==` is canonical equivalence, so a normalizing implementation would
-/// still pass a round-trip test. This suite compares exact UTF-16 code units instead.
+/// still pass a round-trip test. What this library promises is code-unit and byte
+/// compatibility with the JavaScript implementation, not visually equal text, so this
+/// suite compares `Array(decoded.utf16) == Array(input.utf16)` throughout.
 ///
-/// 期待値は pieroxy/lz-string 1.5.0 を Node で実行して得た固定値。
 /// Expected values are pinned outputs from lz-string 1.5.0 under Node.
-@Suite("UTF-16 完全一致と Unicode 境界 / Exact UTF-16 and Unicode boundaries")
+@Suite("Exact UTF-16 and Unicode boundaries")
 struct UTF16ExactnessTests {
     struct Vector: Sendable, CustomStringConvertible {
         let name: String
@@ -190,8 +184,8 @@ struct UTF16ExactnessTests {
                uint8: [33, 130, 52, 124, 27, 133, 235, 176, 198, 64]),
     ]
 
-    /// 正規等価ではなく UTF-16 コードユニット列の完全一致で比較し、
-    /// 食い違った場合は最初に異なる位置を報告する。
+    /// Compares exact UTF-16 code units rather than canonical equivalence, and reports
+    /// the first differing position when they disagree.
     static func exactUTF16(_ actual: String, _ expected: [UInt16], _ label: String) -> (Bool, Comment) {
         let units = Array(actual.utf16)
 
@@ -206,27 +200,27 @@ struct UTF16ExactnessTests {
         let actualUnit = index < units.count ? String(units[index], radix: 16, uppercase: true) : "<end>"
         let expectedUnit = index < expected.count ? String(expected[index], radix: 16, uppercase: true) : "<end>"
 
-        return (false, Comment(rawValue: "\(label): 最初の相違は index \(index) — actual U+\(actualUnit) / expected U+\(expectedUnit) "
+        return (false, Comment(rawValue: "\(label): first difference at index \(index) — actual U+\(actualUnit) / expected U+\(expectedUnit) "
             + "(actual \(units.count) units, expected \(expected.count) units)"))
     }
 
-    /// Swift リテラルで書いた入力が、JS 側で期待値を生成したときの文字列と
-    /// 同一の UTF-16 列であることを先に保証する。ここが崩れると他の検証が無意味になる。
-    @Test("入力が JS 側のコーパスと同一のコードユニット列である", arguments: vectors)
+    /// Guarantees the Swift literal matches the string the JavaScript side used when the
+    /// expectations were generated. Everything else is meaningless if this drifts.
+    @Test("Input matches the JavaScript corpus code unit for code unit", arguments: vectors)
     func inputMatchesPinnedCodeUnits(vector: Vector) {
         let (ok, comment) = Self.exactUTF16(vector.input, vector.utf16, vector.name)
         #expect(ok, comment)
     }
 
-    @Test("圧縮結果が全形式で JS と一致する", arguments: vectors)
+    @Test("Compressed output matches JavaScript in every format", arguments: vectors)
     func compressedOutputMatchesJavaScript(vector: Vector) {
         #expect(LZString.compressToBase64(input: vector.input) == vector.base64, "\(vector.name): base64")
         #expect(LZString.compressToEncodedURIComponent(input: vector.input) == vector.uri, "\(vector.name): uri")
         #expect(Array(LZString.compressToUTF16(input: vector.input).utf16) == vector.utf16Units, "\(vector.name): utf16")
         #expect(LZString.compressToUInt8Array(input: vector.input) == vector.uint8, "\(vector.name): uint8Array")
 
-        // Data はリトルエンディアンのバイト順を保つため、JS の UInt8Array とは
-        // 2 バイトごとに入れ替わる。
+        // Data keeps little-endian byte order, so each pair is swapped relative to the
+        // JavaScript UInt8Array.
         let data: Data = LZString.compress(input: vector.input)
         var swapped = [UInt8]()
         for i in stride(from: 0, to: vector.uint8.count, by: 2) {
@@ -236,9 +230,10 @@ struct UTF16ExactnessTests {
         #expect([UInt8](data) == swapped, "\(vector.name): data")
     }
 
-    /// 可逆な全形式について、復号結果を**コードユニット単位**で入力と比較する。
-    /// 実装が正規化や Character 単位の語識別を行うとここで落ちる。
-    @Test("復号結果が UTF-16 コードユニット単位で入力と完全一致する", arguments: vectors)
+    /// Compares the decoded result against the input by code unit for every lossless
+    /// format. An implementation that normalises, or that identifies phrases by
+    /// `Character`, fails here.
+    @Test("Decoded output equals the input code unit for code unit", arguments: vectors)
     func decodedUnitsAreExactlyEqual(vector: Vector) {
         let decoders: [(String, String)] = [
             ("base64", LZString.decompressFromBase64(input: vector.base64)),
@@ -254,10 +249,10 @@ struct UTF16ExactnessTests {
         }
     }
 
-    /// 正規等価では区別できない NFC / NFD の組が、
-    /// 圧縮結果としては別物になり、それぞれ元のコードユニット列に戻ることを固定する。
-    /// 実装が入力を正規化すると、この 2 つの圧縮結果が一致して落ちる。
-    @Test("NFC と NFD が区別されたまま往復する", arguments: [
+    /// Pins that an NFC/NFD pair — indistinguishable under canonical equivalence —
+    /// compresses to different payloads and each returns its own code units.
+    /// An implementation that normalised its input would make the two payloads equal.
+    @Test("NFC and NFD stay distinct through a round trip", arguments: [
         ("nfcPrecomposedE", "nfdDecomposedE"),
         ("nfcHangulGak", "nfdHangulGak"),
     ])
@@ -265,14 +260,14 @@ struct UTF16ExactnessTests {
         let nfc = try #require(Self.vectors.first { $0.name == nfcName })
         let nfd = try #require(Self.vectors.first { $0.name == nfdName })
 
-        // Swift の == では等しいと判定される組であることを明示する。
+        // Make it explicit that Swift's == considers this pair equal.
         #expect(nfc.input == nfd.input)
         #expect(Array(nfc.input.utf16) != Array(nfd.input.utf16))
 
-        // 圧縮結果は別物でなければならない。
+        // The compressed payloads must differ.
         #expect(nfc.base64 != nfd.base64)
 
-        // それぞれ自分のコードユニット列に戻る。
+        // Each decodes back to its own code units.
         let (nfcOK, nfcComment) = Self.exactUTF16(LZString.decompressFromBase64(input: nfc.base64), nfc.utf16, nfcName)
         #expect(nfcOK, nfcComment)
 
