@@ -69,4 +69,36 @@ jobs:
           test "$(git rev-parse HEAD)" = "$HEAD_SHA"
           rm -rf .benchmarkBaselines
           cp -R "$RUNNER_TEMP/benchmark-baselines" .benchmarkBaselines
-          swift package --allow-writing-to-package-directory benchmark baseline check ci-baseline
+
+          # package-benchmark's relative threshold is two-sided, so an improvement is also
+          # reported as a deviation. The exit code cannot tell the two apart: the tool
+          # defines .thresholdImprovement = 4, but that collapses to 1 at the
+          # `swift package` plugin boundary. Only the output distinguishes them:
+          #
+          #   no deviation : exit 0, "is WITHIN the"
+          #   improvement  : exit 1, "is BETTER than"
+          #   regression   : exit 1, "is WORSE than"
+          #
+          # Regressions still fail and improvements pass, while any other non-zero exit
+          # (a build failure, a missing baseline) keeps failing as before.
+          set +e
+          swift package --allow-writing-to-package-directory benchmark baseline check ci-baseline 2>&1 | tee "$RUNNER_TEMP/benchmark-check.log"
+          check_status=${PIPESTATUS[0]}
+          set -e
+
+          if [ "$check_status" -eq 0 ]; then
+            exit 0
+          fi
+
+          if grep -q "is WORSE than" "$RUNNER_TEMP/benchmark-check.log"; then
+            echo "::error::Throughput regressed beyond the configured tolerance."
+            exit 1
+          fi
+
+          if grep -q "is BETTER than" "$RUNNER_TEMP/benchmark-check.log"; then
+            echo "::notice::Throughput improved beyond the tolerance. The two-sided threshold reports this as a deviation, but it is not a regression."
+            exit 0
+          fi
+
+          echo "::error::The benchmark check failed for a reason other than a threshold deviation (exit $check_status)."
+          exit 1
