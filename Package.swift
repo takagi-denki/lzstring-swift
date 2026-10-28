@@ -3,14 +3,10 @@
 
 import PackageDescription
 
-// package-benchmark の command plugin は Windows をサポートしておらず、
-// コンパイル時に #error("Unsupported Platform") で失敗する。
-// `swift test` はパッケージのプラグインもコンパイルするため、除外しないと
-// Windows ではテスト自体が実行できない。ライブラリ本体は Windows でも動く。
-//
-// package-benchmark's command plugin does not support Windows and fails to compile
-// there. `swift test` compiles package plugins, so the benchmark target is excluded
-// on Windows; the library itself builds and runs there.
+// package-benchmark's command plugin does not support Windows: it fails to compile
+// there with #error("Unsupported Platform"). `swift test` compiles package plugins, so
+// without this exclusion the tests cannot run on Windows at all. The benchmark target is
+// therefore dropped on Windows; the library itself builds and runs there.
 #if os(Windows)
 let benchmarkDependencies: [Package.Dependency] = []
 let benchmarkTargets: [Target] = []

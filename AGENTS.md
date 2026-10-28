@@ -63,6 +63,7 @@ swift package --allow-writing-to-package-directory benchmark baseline check <nam
 ### Language
 
 - **Write code-facing text in English.** This covers identifiers, comments, documentation comments, `@Suite` and `@Test` display names, test function names, assertion descriptions, and developer-facing or diagnostic messages across `Sources`, `Tests`, `Benchmarks` and `Scripts`.
+- It also covers the CI workflows under `.github/` and the repository-level configuration they rely on, such as `Package.swift` and `codecov.yml`: comments there explain why a job, a platform exclusion or a threshold is set the way it is, and are read in the same way as code.
 - Documentation comments on public APIs are English only. Keep the existing warnings on the deprecated APIs, in English.
 - The policy applies to new and changed code. Parts of the existing code are still written in Japanese; translating the repository wholesale is a separate task and is not required here.
 - **Do not translate or remove multilingual test data.** Japanese text, emoji and combining characters used as test input or expected values exist to verify Unicode compatibility. Golden files and reference data stay as they are.

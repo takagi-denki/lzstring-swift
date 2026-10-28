@@ -22,7 +22,7 @@ jobs:
   test:
     name: Test (${{ matrix.os }})
     strategy:
-      # 1 つの OS が落ちても他の結果を隠さない
+      # Do not let one failing OS hide the results from the others.
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-14, windows-latest]
@@ -44,11 +44,8 @@ jobs:
       with:
         swift-version: '6.2'
 
-    # `swift test` はベンチマークターゲットもビルドする。package-benchmark は
-    # jemalloc を macOS と Linux でのみリンクするため（Windows では不要）、
-    # この 2 つの OS にだけ導入する。
-    # `swift test` also builds the benchmark target. package-benchmark links
-    # jemalloc only on macOS and Linux, so Windows needs nothing here.
+    # `swift test` also builds the benchmark target, and package-benchmark links jemalloc
+    # only on macOS and Linux, so it is installed on those two and Windows needs nothing.
     - name: Install jemalloc (Linux)
       if: runner.os == 'Linux'
       run: |
@@ -59,8 +56,8 @@ jobs:
       if: runner.os == 'macOS'
       run: brew install jemalloc
 
-    # テストはフィクスチャをカレントディレクトリからの相対パスで読むため、
-    # 必ずパッケージルートで実行する。
+    # The tests read their fixtures through paths relative to the working directory, so
+    # they must run from the package root.
     - name: Run tests
       if: runner.os != 'Linux'
       run: swift test
@@ -69,8 +66,8 @@ jobs:
       if: runner.os == 'Linux'
       run: swift test --enable-code-coverage
 
-    # カバレッジの収集とアップロードは Linux の 1 ジョブだけで行う。
-    # バイナリパスと llvm-cov の呼び出しはプラットフォーム依存のため。
+    # Coverage is collected and uploaded from the Linux job only: the binary path and the
+    # llvm-cov invocation are platform-specific.
     - name: Export coverage (Linux)
       if: runner.os == 'Linux'
       run: |
