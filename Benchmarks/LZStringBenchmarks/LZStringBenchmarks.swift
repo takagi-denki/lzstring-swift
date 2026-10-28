@@ -126,6 +126,31 @@ let benchmarks: @Sendable () -> Void = {
         }
     }
 
+    // --- Large, poorly compressible payload (issue #59) ---
+    // Output size is close to input size here, so the intermediate buffers that the
+    // UInt8Array path used to allocate are at their most expensive. Generated with a
+    // fixed LCG so the workload is identical between runs.
+    let incompressible: String = {
+        var state: UInt64 = 0x9E3779B97F4A7C15
+        var text = ""
+        text.reserveCapacity(4000)
+        for _ in 0..<4000 {
+            state = state &* 6364136223846793005 &+ 1442695040888963407
+            text.append(Character(UnicodeScalar(32 + UInt8(truncatingIfNeeded: state >> 33) % 95)))
+        }
+        return text
+    }()
+
+    preflightLossless("UInt8Array (large incompressible)",
+                      input: incompressible,
+                      decoded: LZString.decompressFromUInt8Array(input: LZString.compressToUInt8Array(input: incompressible)))
+
+    Benchmark("Compress (UInt8Array, large incompressible)") { benchmark in
+        for _ in benchmark.scaledIterations {
+            blackHole(LZString.compressToUInt8Array(input: incompressible))
+        }
+    }
+
     // --- ASCII decoder payload shapes (issue #58) ---
     // The 445-unit case above is the large ASCII payload; these add a short payload and
     // one whose source text is Unicode, so the decoder's output work differs.
@@ -139,7 +164,18 @@ let benchmarks: @Sendable () -> Void = {
     preflightLossless("Base64 (Unicode source)", input: unicodeText, decoded: LZString.decompressFromBase64(input: unicodeBase64))
     preflightLossless("URI (short)", input: shortText, decoded: LZString.decompressFromEncodedURIComponent(input: shortURI))
 
-    Benchmark("Decompress (Base64, short)") { benchmark in
+    // Short payloads measure a few microseconds per sample and swing by about 20% between
+    // runs of identical code, which is wider than the gate's tolerance. They are recorded
+    // for information but not gated, so they cannot fail CI at random.
+    var informational = Benchmark.defaultConfiguration
+    informational.thresholds = [
+        .throughput: BenchmarkThresholds(relative: [:], absolute: [:]),
+        .wallClock: BenchmarkThresholds(relative: [:], absolute: [:]),
+        .mallocCountTotal: BenchmarkThresholds(relative: [:], absolute: [:]),
+        .allocatedResidentMemory: BenchmarkThresholds(relative: [:], absolute: [:]),
+    ]
+
+    Benchmark("Decompress (Base64, short)", configuration: informational) { benchmark in
         for _ in benchmark.scaledIterations {
             blackHole(LZString.decompressFromBase64(input: shortBase64))
         }
@@ -149,7 +185,7 @@ let benchmarks: @Sendable () -> Void = {
             blackHole(LZString.decompressFromBase64(input: unicodeBase64))
         }
     }
-    Benchmark("Decompress (URI, short)") { benchmark in
+    Benchmark("Decompress (URI, short)", configuration: informational) { benchmark in
         for _ in benchmark.scaledIterations {
             blackHole(LZString.decompressFromEncodedURIComponent(input: shortURI))
         }
