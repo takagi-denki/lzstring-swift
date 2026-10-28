@@ -28,14 +28,14 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    # macOS と Linux は既存のアクションを利用
+    # macOS and Linux use the existing action.
     - name: Setup Swift (macOS / Linux)
       if: runner.os != 'Windows'
       uses: swift-actions/setup-swift@v2
       with:
         swift-version: '6.2'
 
-    # Windows 環境専用のセットアップアクション
+    # Windows needs its own setup action.
     - name: Setup Swift (Windows)
       if: runner.os == 'Windows'
       uses: sushichop/gha-swift-env@v1

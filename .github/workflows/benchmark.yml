@@ -29,16 +29,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libjemalloc-dev
 
-      # 比較対象は**コミット SHA で固定する**。ブランチ名では fork PR を正しく扱えない:
-      # fork のブランチ名は base リポジトリのブランチとは限らず、fork 側が main を
-      # 使っていると base の main 同士を比較してしまう。
-      #
       # Pin both sides to commit SHAs. A fork's branch name is not a branch of this
-      # repository, so `git checkout <head_ref>` can select the wrong commit (or fail).
+      # repository, so `git checkout <head_ref>` can select the wrong commit or fail
+      # outright; if the fork uses `main`, it would compare this repository's main against
+      # itself.
       #
-      # 候補 = PR の head コミット（作者が書いたコードそのもの）。
-      # 基準 = PR の base コミット（マージ先の固定された地点）。
-      # Candidate = the PR head commit; baseline = the PR base commit.
+      # Candidate = the PR head commit, the code as the author wrote it.
+      # Baseline   = the PR base commit, a fixed point to merge into.
       - name: Fetch the PR head commit
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -53,10 +50,8 @@ jobs:
           test "$(git rev-parse HEAD)" = "$BASE_SHA"
           swift package --allow-writing-to-package-directory benchmark baseline update ci-baseline
 
-      # ベースラインは追跡対象外のディレクトリに書かれるため、
-      # 次のチェックアウトで失われないよう退避する。
-      # The baseline lives in an untracked directory; copy it aside so the next
-      # checkout cannot remove it.
+      # The baseline lives in an untracked directory; copy it aside so the next checkout
+      # cannot remove it.
       - name: Preserve the baseline across the checkout
         run: cp -R .benchmarkBaselines "$RUNNER_TEMP/benchmark-baselines"
 
