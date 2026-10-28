@@ -126,6 +126,35 @@ let benchmarks: @Sendable () -> Void = {
         }
     }
 
+    // --- ASCII decoder payload shapes (issue #58) ---
+    // The 445-unit case above is the large ASCII payload; these add a short payload and
+    // one whose source text is Unicode, so the decoder's output work differs.
+    let shortText = "hello world"
+    let unicodeText = String(repeating: "日本語🥺テスト", count: 40)
+    let shortBase64 = LZString.compressToBase64(input: shortText)
+    let unicodeBase64 = LZString.compressToBase64(input: unicodeText)
+    let shortURI = LZString.compressToEncodedURIComponent(input: shortText)
+
+    preflightLossless("Base64 (short)", input: shortText, decoded: LZString.decompressFromBase64(input: shortBase64))
+    preflightLossless("Base64 (Unicode source)", input: unicodeText, decoded: LZString.decompressFromBase64(input: unicodeBase64))
+    preflightLossless("URI (short)", input: shortText, decoded: LZString.decompressFromEncodedURIComponent(input: shortURI))
+
+    Benchmark("Decompress (Base64, short)") { benchmark in
+        for _ in benchmark.scaledIterations {
+            blackHole(LZString.decompressFromBase64(input: shortBase64))
+        }
+    }
+    Benchmark("Decompress (Base64, Unicode source)") { benchmark in
+        for _ in benchmark.scaledIterations {
+            blackHole(LZString.decompressFromBase64(input: unicodeBase64))
+        }
+    }
+    Benchmark("Decompress (URI, short)") { benchmark in
+        for _ in benchmark.scaledIterations {
+            blackHole(LZString.decompressFromEncodedURIComponent(input: shortURI))
+        }
+    }
+
     // --- URI Component ---
     Benchmark("Compress (URI)") { benchmark in
         for _ in benchmark.scaledIterations {
