@@ -165,15 +165,12 @@ public func decompressFromUTF16(input: String) -> String {
 /// - Parameter input: The text to compress.
 /// - Returns: The compressed stream as big-endian 16-bit units.
 public func compressToUInt8Array(input: String) -> [UInt8] {
-    let compressed : Data = compress(input: input)
-    var buffer = [UInt8](repeating: 0, count: compressed.count)
-
-    for i in 0..<(compressed.count / 2) {
-        buffer[i * 2] = compressed[i * 2 + 1]
-        buffer[i * 2 + 1] = compressed[i * 2]
-    }
-
-    return buffer
+    // Emit the big-endian pairs straight from the compressor. Going through
+    // `compress(input:) -> Data` would allocate a full little-endian buffer and a second
+    // output buffer, then swap every byte between them.
+    return _compress(input: input, bitPerChar: 16, charFromInt: { a in
+        return [UInt8(a >> 8), UInt8(a % 256)]
+    })
 }
 
 /// Decompresses bytes produced by `compressToUInt8Array(input:)`.
