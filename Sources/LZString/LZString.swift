@@ -28,6 +28,29 @@ private func getBaseValue(alphabet: [Int], char: Character) -> Int {
     return alphabet[Int(ascii)]
 }
 
+/// Returns the UTF-8 bytes of `s` when they can be indexed interchangeably with its
+/// `Character`s and UTF-16 code units, or `nil` when they cannot.
+///
+/// The decoders below are indexed by position, so a byte-based fast path is only
+/// equivalent when byte offsets, `Character` offsets and UTF-16 offsets all coincide.
+/// In pure ASCII the single grapheme cluster that spans more than one scalar is CR-LF
+/// (and `Character.asciiValue` reports it as a single line feed), so excluding CR is
+/// enough to guarantee the three agree. Anything else falls back to the original path.
+func asciiIndexableBytes(_ s: String) -> [UInt8]? {
+    var bytes = [UInt8]()
+    bytes.reserveCapacity(s.utf8.count)
+
+    for byte in s.utf8 {
+        guard byte < 0x80, byte != 0x0D else {
+            return nil
+        }
+
+        bytes.append(byte)
+    }
+
+    return bytes
+}
+
 /// Compresses `input` into a string drawn from a Base64 alphabet.
 ///
 /// The result is not a Base64 encoding of `input`. It is the LZ-compressed bit stream
@@ -75,6 +98,18 @@ public func decompressFromBase64(input: String) -> String {
         return ""
     }
 
+    // Fast path: read the supported ASCII alphabet straight from UTF-8 bytes, which avoids
+    // building a String.Index and a Character for every position.
+    if let bytes = asciiIndexableBytes(input) {
+        return _decompress(length: bytes.count, resetValue: 32, nextValue: { a in keyStrBase64Array[Int(bytes[a])] })
+    }
+
+    return _decompressFromBase64ByCharacter(input: input)
+}
+
+/// The `Character`-based decoding path, kept as the fallback for input the byte fast path
+/// cannot index equivalently. Exposed internally so tests can compare the two paths.
+func _decompressFromBase64ByCharacter(input: String) -> String {
     return _decompress(length: input.count, resetValue: 32, nextValue: { a in getBaseValue(alphabet: keyStrBase64Array, char: input[a]) })
 }
 
@@ -205,6 +240,22 @@ public func decompressFromEncodedURIComponent(input: String) -> String {
         return ""
     }
 
+    // Fast path: normalise spaces to '+' in place on the bytes, which also avoids building
+    // the replacement String.
+    if var bytes = asciiIndexableBytes(input) {
+        for index in bytes.indices where bytes[index] == 0x20 {
+            bytes[index] = 0x2B
+        }
+
+        return _decompress(length: bytes.count, resetValue: 32, nextValue: { a in keyStrUriSafeArray[Int(bytes[a])] })
+    }
+
+    return _decompressFromEncodedURIComponentByCharacter(input: input)
+}
+
+/// The `Character`-based decoding path, kept as the fallback for input the byte fast path
+/// cannot index equivalently. Exposed internally so tests can compare the two paths.
+func _decompressFromEncodedURIComponentByCharacter(input: String) -> String {
     let replaced = input.replacingOccurrences(of: " ", with: "+")
 
     return _decompress(length: replaced.count, resetValue: 32, nextValue: { a in getBaseValue(alphabet: keyStrUriSafeArray, char: replaced[a]) })
