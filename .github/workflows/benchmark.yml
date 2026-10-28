@@ -69,4 +69,40 @@ jobs:
           test "$(git rev-parse HEAD)" = "$HEAD_SHA"
           rm -rf .benchmarkBaselines
           cp -R "$RUNNER_TEMP/benchmark-baselines" .benchmarkBaselines
-          swift package --allow-writing-to-package-directory benchmark baseline check ci-baseline
+
+          # package-benchmark の relative 閾値は両側判定なので、性能が改善したときも
+          # 逸脱として報告される。終了コードでは区別できない（改善・劣化ともに 1 で、
+          # ツールが定義する .thresholdImprovement = 4 は swift package プラグイン境界で
+          # 潰れる）。区別できるのは出力だけ:
+          #
+          #   逸脱なし : exit 0, "is WITHIN the"
+          #   改善のみ : exit 1, "is BETTER than"
+          #   劣化あり : exit 1, "is WORSE than"
+          #
+          # 劣化は確実に落とし、改善は通す。それ以外の非ゼロ終了（ビルド失敗、
+          # ベースライン未検出など）は従来どおり失敗させる。
+          #
+          # The relative threshold is two-sided, so an improvement is also reported as a
+          # deviation and the exit code cannot tell the two apart. Only the output can.
+          # Regressions still fail; improvements pass; any other non-zero exit still fails.
+          set +e
+          swift package --allow-writing-to-package-directory benchmark baseline check ci-baseline 2>&1 | tee "$RUNNER_TEMP/benchmark-check.log"
+          check_status=${PIPESTATUS[0]}
+          set -e
+
+          if [ "$check_status" -eq 0 ]; then
+            exit 0
+          fi
+
+          if grep -q "is WORSE than" "$RUNNER_TEMP/benchmark-check.log"; then
+            echo "::error::Throughput regressed beyond the configured tolerance."
+            exit 1
+          fi
+
+          if grep -q "is BETTER than" "$RUNNER_TEMP/benchmark-check.log"; then
+            echo "::notice::Throughput improved beyond the tolerance. The two-sided threshold reports this as a deviation, but it is not a regression."
+            exit 0
+          fi
+
+          echo "::error::The benchmark check failed for a reason other than a threshold deviation (exit $check_status)."
+          exit 1
