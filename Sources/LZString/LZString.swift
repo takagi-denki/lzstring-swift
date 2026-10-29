@@ -147,7 +147,11 @@ public func decompressFromUTF16(input: String) -> String {
         return ""
     }
 
-    return _decompress(length: input.utf16.count, resetValue: 16384, nextValue: { i in Int(input.utf16[i]) - 32 })
+    // Materialise the code units once. Reading them through a UTF-16 offset index rebuilds
+    // a String and converts an index on every access.
+    let units = Array(input.utf16)
+
+    return _decompress(length: units.count, resetValue: 16384, nextValue: { i in Int(units[i]) - 32 })
 }
 
 /// Compresses `input` into bytes laid out like the original implementation's
@@ -577,7 +581,10 @@ public func decompress(input: String) -> String {
         return ""
     }
 
-    return _decompress(length: input.utf16.count, resetValue: 32768, nextValue: {i in Int(input.utf16[i])})
+    // Same reasoning as `decompressFromUTF16(input:)`: materialise the code units once.
+    let units = Array(input.utf16)
+
+    return _decompress(length: units.count, resetValue: 32768, nextValue: { i in Int(units[i]) })
 }
 
 /// Decompresses data produced by `compress(input:)` returning `Data`.
@@ -761,8 +768,3 @@ extension String {
     }
 }
 
-extension String.UTF16View {
-    subscript(pos: Int) -> Unicode.UTF16.CodeUnit {
-        return self[String.UTF16View.Index(utf16Offset: pos, in: String(self))]
-    }
-}
