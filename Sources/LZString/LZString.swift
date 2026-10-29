@@ -613,14 +613,16 @@ public func decompress(input: Data) -> String {
 }
 
 private func _decompress(length: Int, resetValue: Int, nextValue: @escaping GetNextValue) -> String {
-    var dict : [Int:[UInt64]] = [0 : [0], 1 : [1], 2 : [2]]
+    // Phrases hold UTF-16 code units, so they are stored as UInt16 and appended to
+    // `result` without conversion. Dictionary codes and counters stay Int: they are not
+    // code units and can exceed UInt16.max on large inputs (issue #75).
+    var dict : [Int:[UInt16]] = [0 : [0], 1 : [1], 2 : [2]]
     var next = 0
     var enlargeIn = 4
     var dictSize = 4
     var numBits = 3
-    var c : UInt64 = 0
-    var entry : [UInt64] = []
-    var w : [UInt64] = []
+    var entry : [UInt16] = []
+    var w : [UInt16] = []
     // Accumulate UTF-16 code units directly: going through bytes and
     // String(data:encoding:.utf16) makes a leading U+FEFF / U+FFFE be eaten as a BOM
     // and lost (issue #23).
@@ -667,19 +669,21 @@ private func _decompress(length: Int, resetValue: Int, nextValue: @escaping GetN
     // Tag 3 is invalid and must not be treated as a character; it previously fell through
     // with the initial c == 0 and produced a fabricated NUL character (issue #57).
     // A switch keeps the handling exhaustive.
+    let firstUnit: UInt16
+
     switch next {
     case 0:
         guard let literal = _slide(data: &data, maxpower: 2 << 7) else {
             return ""
         }
 
-        c = UInt64(literal)
+        firstUnit = UInt16(literal)
     case 1:
         guard let literal = _slide(data: &data, maxpower: 2 << 15) else {
             return ""
         }
 
-        c = UInt64(literal)
+        firstUnit = UInt16(literal)
     case 2:
         // An empty stream.
         return ""
@@ -687,37 +691,37 @@ private func _decompress(length: Int, resetValue: Int, nextValue: @escaping GetN
         return ""
     }
 
-    w = [c]
+    w = [firstUnit]
     dict[3] = w
-    result.append(contentsOf: w.map({ UInt16($0) }))
+    result.append(contentsOf: w)
 
     while true {
         // Exhaustion is detected by _slide itself.
-        guard let code = _slide(data: &data, maxpower: 2 << (numBits - 1)) else {
+        guard let readCode = _slide(data: &data, maxpower: 2 << (numBits - 1)) else {
             return ""
         }
 
-        c = UInt64(code)
+        var code = readCode
 
-        if c == 0 {
+        if code == 0 {
             guard let literal = _slide(data: &data, maxpower: 2 << 7) else {
                 return ""
             }
 
-            dict[dictSize] = [UInt64(literal)]
+            dict[dictSize] = [UInt16(literal)]
             dictSize += 1
-            c = UInt64(dictSize - 1)
+            code = dictSize - 1
             enlargeIn -= 1
-        } else if c == 1 {
+        } else if code == 1 {
             guard let literal = _slide(data: &data, maxpower: 2 << 15) else {
                 return ""
             }
 
-            dict[dictSize] = [UInt64(literal)]
+            dict[dictSize] = [UInt16(literal)]
             dictSize += 1
-            c = UInt64(dictSize - 1)
+            code = dictSize - 1
             enlargeIn -= 1
-        } else if c == 2 {
+        } else if code == 2 {
             return String(decoding: result, as: UTF16.self)
         }
 
@@ -726,13 +730,13 @@ private func _decompress(length: Int, resetValue: Int, nextValue: @escaping GetN
             numBits += 1
         }
 
-        if let e = dict[Int(c)] {
+        if let e = dict[code] {
             entry = e
         } else {
-            if c == dictSize {
+            if code == dictSize {
                 // LZW KwKwK case: the entry is w + w[0]; `entry` still holds the
                 // previous iteration's value (empty on the first pass) and must not be used.
-                var tmp = Array(w)
+                var tmp = w
                 tmp.append(w[0])
                 entry = tmp
             } else {
@@ -740,8 +744,8 @@ private func _decompress(length: Int, resetValue: Int, nextValue: @escaping GetN
             }
         }
 
-        result.append(contentsOf: entry.map({ UInt16($0) }))
-        var tmp = Array(w)
+        result.append(contentsOf: entry)
+        var tmp = w
         tmp.append(entry[0])
         dict[dictSize] = tmp
         dictSize += 1
