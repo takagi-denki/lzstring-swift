@@ -53,6 +53,7 @@ swift package --allow-writing-to-package-directory benchmark baseline check <nam
 - The internals work in UTF-16 code units (`input.utf16`, dictionary keys of `[UInt16]`). Switching to `Character` or `String.Index` units breaks compatibility with JavaScript for surrogate pairs such as emoji.
 - The main loop and the tail handling of `_compress` contain **deliberately duplicated** bit-output code. It mirrors the structure of the original JavaScript, and compatibility and inlining are preferred over a readability refactor.
 - `keyStrBase64Array` and `keyStrUriSafeArray` are 256-element lookup tables indexed by ASCII code (a performance optimisation, commit `8cde82f`). When changing an alphabet, update both the string and the array.
+  - The encoding side uses `keyStrBase64Bytes` / `keyStrUriSafeBytes`, which are **derived** from the alphabet strings with `Array(keyStrBase64.utf8)` (issue #77). Do not write them out as literals: deriving them is what keeps them from drifting away from the strings.
 - `_decompress` accumulates the decoded result as UTF-16 code units (`[UInt16]`) and builds the string with `String(decoding:as: UTF16.self)`. Do not serialise it to bytes and pass it to `String(data:encoding:.utf16)` — a leading U+FEFF or U+FFFE is then read as a BOM and the character is lost (issue #23).
 
 ## Style

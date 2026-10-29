@@ -3,6 +3,14 @@ import Foundation
 private let keyStrBase64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
 private let keyStrBase64Array = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 62, 0, 0, 0, 63, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 0, 0, 0, 64, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 0, 0, 0, 0, 0, 0, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 private let keyStrUriSafe = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-$"
+/// The encoding side of the alphabets, as ASCII bytes.
+///
+/// `compressToBase64` and `compressToEncodedURIComponent` emit known ASCII, so they build
+/// a byte buffer and convert to a `String` once at the end (issue #77). These are derived
+/// from the strings above rather than written out again, so the two cannot drift apart.
+private let keyStrBase64Bytes = Array(keyStrBase64.utf8)
+private let keyStrUriSafeBytes = Array(keyStrUriSafe.utf8)
+
 private let keyStrUriSafeArray = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 64, 0, 0, 0, 0, 0, 0, 62, 0, 63, 0, 0, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 0, 0, 0, 0, 0, 0, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
 
@@ -67,19 +75,14 @@ func asciiIndexableBytes(_ s: String) -> [UInt8]? {
 /// - Parameter input: The text to compress.
 /// - Returns: The compressed stream written in the Base64 alphabet.
 public func compressToBase64(input: String) -> String {
-    let result = _compress(input: input, bitPerChar: 6, charFromInt: { a in String(keyStrBase64[a])})
-    switch result.count % 4 {
-    case 0:
-        return result
-    case 1:
-        return result + "==="
-    case 2:
-        return result + "=="
-    case 3:
-        return result + "="
-    default:
-        return ""
-    }
+    var bytes: [UInt8] = _compress(input: input, bitPerChar: 6, charFromInt: { a in [keyStrBase64Bytes[a]] })
+
+    // Pad to a multiple of four. Every six-bit symbol is one ASCII byte, so the byte count
+    // is also the character count the previous String-based version measured.
+    let padding = (4 - bytes.count % 4) % 4
+    bytes.append(contentsOf: repeatElement(UInt8(ascii: "="), count: padding))
+
+    return String(decoding: bytes, as: UTF8.self)
 }
 
 /// Decompresses a stream produced by `compressToBase64(input:)`.
@@ -219,7 +222,9 @@ public func decompressFromUInt8Array(input: [UInt8]) -> String {
 /// - Parameter input: The text to compress.
 /// - Returns: The compressed stream written in the URL-safe alphabet.
 public func compressToEncodedURIComponent(input: String) -> String {
-    return _compress(input: input, bitPerChar: 6, charFromInt: { i in String(keyStrUriSafe[i])})
+    let bytes: [UInt8] = _compress(input: input, bitPerChar: 6, charFromInt: { i in [keyStrUriSafeBytes[i]] })
+
+    return String(decoding: bytes, as: UTF8.self)
 }
 
 /// Decompresses a stream produced by `compressToEncodedURIComponent(input:)`.
