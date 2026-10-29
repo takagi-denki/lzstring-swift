@@ -185,6 +185,17 @@ let benchmarks: @Sendable () -> Void = {
             blackHole(LZString.decompressFromBase64(input: unicodeBase64))
         }
     }
+    // Short UTF-16 payload: checks that materialising the code units up front (issue #74)
+    // does not cost more than it saves on tiny inputs.
+    let shortUTF16 = LZString.compressToUTF16(input: shortText)
+    preflightLossless("UTF16 (short)", input: shortText, decoded: LZString.decompressFromUTF16(input: shortUTF16))
+
+    Benchmark("Decompress (UTF16, short)", configuration: informational) { benchmark in
+        for _ in benchmark.scaledIterations {
+            blackHole(LZString.decompressFromUTF16(input: shortUTF16))
+        }
+    }
+
     Benchmark("Decompress (URI, short)", configuration: informational) { benchmark in
         for _ in benchmark.scaledIterations {
             blackHole(LZString.decompressFromEncodedURIComponent(input: shortURI))
