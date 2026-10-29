@@ -213,6 +213,70 @@ let benchmarks: @Sendable () -> Void = {
             blackHole(LZString.decompressFromEncodedURIComponent(input: compressedURI))
         }
     }
+
+    // --- Compressor input shapes (issue #34) ---------------------------------------
+    // Everything above compresses the same 445-unit Latin paragraph, which keeps phrases
+    // short. The compressor's phrase lookup is where cost grows with phrase length, so
+    // these add the shapes that make phrases long or the dictionary deep.
+
+    // 64 Ki units of a repeating pattern: the phrases here grow to hundreds of units.
+    let repeated = String(repeating: "abcd", count: 16384)
+
+    // Structured text with a repeating key vocabulary, generated with a fixed LCG so the
+    // workload is identical between runs.
+    let jsonLike: String = {
+        var state: UInt64 = 7
+        var parts = [String]()
+        parts.reserveCapacity(2000)
+        for index in 0..<2000 {
+            state = state &* 6364136223846793005 &+ 1442695040888963407
+            let value = Int((state >> 33) % 1000)
+            parts.append("{\"id\":\(index),\"name\":\"item-\(value)\",\"active\":\(value % 2 == 0)}")
+        }
+        return "{\"items\":[" + parts.joined(separator: ",") + "]}"
+    }()
+
+    // Non-ASCII BMP text mixed with surrogate pairs, so a phrase boundary can fall between
+    // the two halves of one emoji.
+    let unicodeMix = String(repeating: "日本語のテキスト😀🥺e\u{301}", count: 2000)
+
+    // A short message, to show the change does not cost anything on tiny inputs.
+    let shortMessage = "hello world"
+
+    preflightLossless("Base64 (64Ki repeated)", input: repeated,
+                      decoded: LZString.decompressFromBase64(input: LZString.compressToBase64(input: repeated)))
+    preflightLossless("Base64 (JSON-like)", input: jsonLike,
+                      decoded: LZString.decompressFromBase64(input: LZString.compressToBase64(input: jsonLike)))
+    preflightLossless("Base64 (Unicode mix)", input: unicodeMix,
+                      decoded: LZString.decompressFromBase64(input: LZString.compressToBase64(input: unicodeMix)))
+    preflightLossless("Base64 (short message)", input: shortMessage,
+                      decoded: LZString.decompressFromBase64(input: LZString.compressToBase64(input: shortMessage)))
+
+    Benchmark("Compress (Base64, 64Ki repeated)") { benchmark in
+        for _ in benchmark.scaledIterations {
+            blackHole(LZString.compressToBase64(input: repeated))
+        }
+    }
+
+    Benchmark("Compress (Base64, JSON-like)") { benchmark in
+        for _ in benchmark.scaledIterations {
+            blackHole(LZString.compressToBase64(input: jsonLike))
+        }
+    }
+
+    Benchmark("Compress (Base64, Unicode mix)") { benchmark in
+        for _ in benchmark.scaledIterations {
+            blackHole(LZString.compressToBase64(input: unicodeMix))
+        }
+    }
+
+    // Short payloads swing by about 20% between runs of identical code, so this one is
+    // recorded for information and not gated, like the short decoder benchmarks above.
+    Benchmark("Compress (Base64, short message)", configuration: informational) { benchmark in
+        for _ in benchmark.scaledIterations {
+            blackHole(LZString.compressToBase64(input: shortMessage))
+        }
+    }
 }
 
 /// Measures the deprecated raw `String` format (#22). With the 445-unit input used by the other

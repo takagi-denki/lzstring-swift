@@ -142,3 +142,44 @@ const out = { seed: SEED, referenceVersion: version, referenceSha256: sha256, ba
 const dest = path.join(__dirname, "..", "Tests", "Resources", "js_differential.json");
 fs.writeFileSync(dest, JSON.stringify(out, null, 1) + "\n");
 console.log(`wrote ${dest}: ${cases.length} cases, widths ${JSON.stringify(exercised)}`);
+
+// --- Large repeated phrases (issue #34) -----------------------------------------------
+// The corpus above is built from prefixes of three roughly 2 KiB bases, so the phrases it
+// reaches stay short. The compressor identifies a phrase by its prefix's dictionary code,
+// which only diverges from the original phrase-keyed lookup once phrases grow long and the
+// dictionary deepens, so these cases go up to 1 Mi UTF-16 units.
+//
+// Repeated input is what makes that affordable: 1 Mi units of "a" compress to about 2.3 KiB
+// of Base64, so the expectations can be committed in full rather than hashed. The input
+// itself is not committed; both sides build it from `unit` and `count`.
+const repeatedSpecs = [
+  { id: "a-4Ki",       unit: "a",    count: 4096,   note: "single character, 4 Ki units" },
+  { id: "a-16Ki",      unit: "a",    count: 16384,  note: "single character, 16 Ki units" },
+  { id: "a-64Ki",      unit: "a",    count: 65536,  note: "single character, 64 Ki units" },
+  { id: "a-256Ki",     unit: "a",    count: 262144, note: "single character, 256 Ki units" },
+  { id: "a-1Mi",       unit: "a",    count: 1048576, note: "single character, 1 Mi units" },
+  { id: "ab-8Ki",      unit: "ab",   count: 4096,   note: "two-character pattern, 8 Ki units" },
+  { id: "abcd-1Mi",    unit: "abcd", count: 262144, note: "four-character pattern, 1 Mi units" },
+  { id: "japanese-64Ki", unit: "\u65e5\u672c", count: 32768, note: "non-ASCII BMP pattern, 64 Ki units" },
+  // Surrogate pairs: a phrase boundary can fall between the two halves of one emoji.
+  { id: "emoji-64Ki",  unit: "\u{1F600}", count: 32768, note: "surrogate pairs, 64 Ki units" },
+];
+
+const repeated = repeatedSpecs.map(spec => {
+  const s = spec.unit.repeat(spec.count);
+  if (lz.decompressFromBase64(lz.compressToBase64(s)) !== s) throw new Error("js roundtrip failed: " + spec.id);
+  return {
+    ...spec,
+    inputUtf16Units: s.length,
+    base64: lz.compressToBase64(s),
+    uri: lz.compressToEncodedURIComponent(s),
+    utf16Hex: hex16(units(lz.compressToUTF16(s))),
+    uint8Hex: hex(Array.from(lz.compressToUint8Array(s))),
+  };
+});
+
+const largeOut = { referenceVersion: version, referenceSha256: sha256, cases: repeated };
+const largeDest = path.join(__dirname, "..", "Tests", "Resources", "js_large_phrases.json");
+fs.writeFileSync(largeDest, JSON.stringify(largeOut, null, 1) + "\n");
+console.log(`wrote ${largeDest}: ${repeated.length} cases, ` +
+  `${repeated.reduce((a, b) => a + b.inputUtf16Units, 0).toLocaleString()} input UTF-16 units`);
