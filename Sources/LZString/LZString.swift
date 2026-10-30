@@ -26,7 +26,22 @@ private typealias GetCharFromInt<T> = (Int) -> T
 private typealias GetNextValue = (Int) -> Int
 
 private typealias DecompressData = (value: Int, position: Int, index: Int)
-private typealias CompressContext<T> = (dict: [String:Int], dictCreate: [String:Bool], data: T, val: Int, position: Int) where T : RangeReplaceableCollection
+/// A phrase as its prefix's dictionary code plus the code unit that extends it (issue #34).
+///
+/// Every phrase the compressor holds already has a dictionary code, and a code identifies
+/// exactly one phrase, so this pair identifies the extended phrase exactly. The lookup is
+/// then a hash of an `Int` and a `UInt16` instead of a hash of the whole phrase, and it
+/// needs no collision handling of its own: an ordinary hash collision is resolved by
+/// `Dictionary` comparing these two fields.
+private struct PhraseTransition : Hashable {
+    /// Stands for the empty phrase, which has no dictionary code of its own. A single-unit
+    /// phrase `[c]` is then the empty phrase extended by `c`, which is why the single-unit
+    /// and the extended lookup share one key shape.
+    static let emptyPhrase = -1
+
+    let prefix: Int
+    let unit: UInt16
+}
 
 private func getBaseValue(alphabet: [Int], char: Character) -> Int {
     guard let ascii = char.asciiValue else {
@@ -318,29 +333,36 @@ private func _compress<T : RangeReplaceableCollection>(input: String, bitPerChar
     // No early return for an empty string: the original JS distinguishes "" from null
     // and still emits the end-of-stream code for "" (issue #33).
     var value = 0
-    var wc : [UInt16] = []
-    var w : [UInt16] = []
+    // A phrase is carried as its dictionary code, not as its code units (issue #34). `w`
+    // is only ever assigned a phrase that already has a code, so the per-unit array copy
+    // of `w + [c]` and the whole-phrase hashing it required are both unnecessary.
+    var wCode = PhraseTransition.emptyPhrase
     var enlargeIn = 2
     var dictSize = 3
     var numBits = 2
-    var context = (dict: [[UInt16]:Int](), dictCreate: [[UInt16]:Bool](), data: T(), val: 0, position: 0)
+    // The literal still owed for a code, replacing the `dictCreate` dictionary. Only
+    // single-unit phrases were ever registered there, so the pending unit is that phrase's
+    // only unit and therefore also its `w[0]`. Entries are removed once emitted, exactly
+    // as before, so this stays small rather than growing with dictSize.
+    var pendingLiteral = [Int:UInt16]()
+    var context = (dict: [PhraseTransition:Int](), data: T(), val: 0, position: 0)
 
     for c in input.utf16 {
-        let s = [c]
+        let single = PhraseTransition(prefix: PhraseTransition.emptyPhrase, unit: c)
 
-        if context.dict.index(forKey: s) == nil {
-            context.dict[s] = dictSize
-            context.dictCreate[s] = true
+        if context.dict.index(forKey: single) == nil {
+            context.dict[single] = dictSize
+            pendingLiteral[dictSize] = c
             dictSize += 1
         }
 
-        wc = w + s
+        let transition = PhraseTransition(prefix: wCode, unit: c)
 
-        if context.dict[wc] != nil {
-            w = wc
+        if let code = context.dict[transition] {
+            wCode = code
         } else {
-            if context.dictCreate.index(forKey: w) != nil {
-                if w[0] < 256 {
+            if let pending = pendingLiteral[wCode] {
+                if pending < 256 {
                     for _ in 0..<numBits {
                         context.val <<= 1
 
@@ -353,7 +375,7 @@ private func _compress<T : RangeReplaceableCollection>(input: String, bitPerChar
                         }
                     }
 
-                    value = Int(w[0])
+                    value = Int(pending)
 
                     for _ in 0..<8 {
                         context.val = (context.val << 1) | (value & 1)
@@ -384,7 +406,7 @@ private func _compress<T : RangeReplaceableCollection>(input: String, bitPerChar
                         value = 0
                     }
 
-                    value = Int(w[0])
+                    value = Int(pending)
 
                     for _ in 0..<16 {
                         context.val = (context.val << 1) | (value & 1)
@@ -408,9 +430,9 @@ private func _compress<T : RangeReplaceableCollection>(input: String, bitPerChar
                     numBits += 1
                 }
 
-                context.dictCreate.removeValue(forKey: w)
+                pendingLiteral.removeValue(forKey: wCode)
             } else {
-                value = context.dict[w]!
+                value = wCode
 
                 for _ in 0..<numBits {
                     context.val = (context.val << 1) | (value & 1)
@@ -432,15 +454,15 @@ private func _compress<T : RangeReplaceableCollection>(input: String, bitPerChar
                 enlargeIn = 2 << (numBits - 1)
                 numBits += 1
             }
-            context.dict[wc] = dictSize
+            context.dict[transition] = dictSize
             dictSize += 1
-            w = s
+            wCode = context.dict[single]!
         }
     }
 
-    if !w.isEmpty {
-        if context.dictCreate.index(forKey: w) != nil {
-            if w[0] < 256 {
+    if wCode != PhraseTransition.emptyPhrase {
+        if let pending = pendingLiteral[wCode] {
+            if pending < 256 {
                 for _ in 0..<numBits {
                     context.val <<= 1
 
@@ -453,7 +475,7 @@ private func _compress<T : RangeReplaceableCollection>(input: String, bitPerChar
                     }
                 }
 
-                value = Int(w[0])
+                value = Int(pending)
 
                 for _ in 0..<8 {
                     context.val = (context.val << 1) | (value & 1)
@@ -485,7 +507,7 @@ private func _compress<T : RangeReplaceableCollection>(input: String, bitPerChar
                     value = 0
                 }
 
-                value = Int(w[0])
+                value = Int(pending)
 
                 for _ in 0..<16 {
                     context.val = (context.val << 1) | (value & 1)
@@ -509,9 +531,9 @@ private func _compress<T : RangeReplaceableCollection>(input: String, bitPerChar
                 numBits += 1
             }
 
-            context.dictCreate.removeValue(forKey: w)
+            pendingLiteral.removeValue(forKey: wCode)
         } else {
-            value = context.dict[w]!
+            value = wCode
 
             for _ in 0..<numBits {
                 context.val = (context.val << 1) | (value & 1)
