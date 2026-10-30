@@ -9,11 +9,11 @@
 
 A Swift port of [lz-string](https://github.com/pieroxy/lz-string), the LZW-based string compressor by pieroxy.
 
-The output is byte-for-byte identical to the original JavaScript implementation, so a string compressed in Swift can be decompressed in a browser, and vice versa.
+The compressed output matches the original JavaScript implementation byte for byte, so a payload produced in Swift can be decompressed in a browser and vice versa. Two details need care before you cross that boundary: the `Data` format uses the **opposite byte order** from a JavaScript `Uint8Array`, and the deprecated raw `String` format is lossy. See [Interoperating with JavaScript](#interoperating-with-javascript).
 
 ## Features
 
-- **Compatible with the JavaScript original.** Verified against `lz-string` for every format.
+- **Compatible with the JavaScript original.** Every format's output is checked against `lz-string` byte for byte. Four of them are exchanged with JavaScript directly; `Data` needs its byte order swapped first.
 - **Six output formats** — Base64, URL-safe, UTF-16, `[UInt8]`, `Data`, and raw `String` (deprecated).
 - **No third-party dependencies.** The library target imports only `Foundation`.
 - **Runs everywhere Swift does.** CI builds on macOS, Linux, Windows, and the static Linux musl SDK.
@@ -74,8 +74,8 @@ Sizes below are for a 570-byte ASCII sample (`"Lorem ipsum dolor sit amet, conse
 | `compressToBase64` / `decompressFromBase64` | `String` (`A–Z a–z 0–9 + / =`) | 292 chars (51%) | You need plain text that survives anything |
 | `compressToEncodedURIComponent` / `decompressFromEncodedURIComponent` | `String` (`A–Z a–z 0–9 + - $`) | 292 chars (51%) | The value goes in a URL or query string |
 | `compressToUTF16` / `decompressFromUTF16` | `String` (15 bits per character) | 118 chars (236 bytes as UTF-16) | You store into a UTF-16 store such as `localStorage` |
-| `compressToUInt8Array` / `decompressFromUInt8Array` | `[UInt8]` | 220 bytes (39%) | You hand the bytes to a JavaScript `Uint8Array` |
-| `compress` / `decompress` | `Data` | 220 bytes (39%) | **Most compact.** Writing to a file, a socket, or a database |
+| `compressToUInt8Array` / `decompressFromUInt8Array` | `[UInt8]`, big-endian | 220 bytes (39%) | You hand the bytes to a JavaScript `Uint8Array` |
+| `compress` / `decompress` | `Data`, little-endian | 220 bytes (39%) | **Most compact.** Writing to a file, a socket, or a database. Not interchangeable with JavaScript as-is — see [the byte-order note](#data-needs-its-byte-order-swapped) |
 | `compress` / `decompress` | `String` | — | ⚠️ **Deprecated** — lossy in Swift, see [Caveats](#caveats) |
 
 ### Base64
@@ -123,9 +123,22 @@ let data = LZString.compress(input: text)        // ❌ ambiguous
 let data = LZString.compress(input: text) as Data // ✅
 ```
 
+The two carry the same 16-bit stream in **opposite byte orders**: `Data` is little-endian, `[UInt8]` is big-endian. Within Swift this never matters, because each format decompresses with its own counterpart. It matters as soon as the bytes leave for JavaScript — see [`Data` needs its byte order swapped](#data-needs-its-byte-order-swapped).
+
 ## Interoperating with JavaScript
 
-Every format round-trips through the original implementation. Compress in Swift:
+Four formats are exchanged with `lz-string` directly, with no conversion:
+
+- `compressToBase64` / `decompressFromBase64`
+- `compressToEncodedURIComponent` / `decompressFromEncodedURIComponent`
+- `compressToUTF16` / `decompressFromUTF16`
+- `compressToUInt8Array` / `decompressFromUInt8Array`, against the JavaScript `compressToUint8Array` / `decompressFromUint8Array`
+
+The other two are not interchange formats. `Data` needs its byte order swapped, as described below, and the deprecated raw `String` format is lossy in Swift — see [Caveats](#the-raw-string-format-is-deprecated).
+
+Interoperability is also limited to text a Swift `String` can hold. A JavaScript string may contain an unpaired surrogate; a Swift `String` cannot, so such text is not round-trippable regardless of the format.
+
+Compress in Swift:
 
 ```swift
 LZString.compressToEncodedURIComponent(input: "Hello, World!")
@@ -143,6 +156,30 @@ The reverse works too — pass a string produced by `lz-string` to the matching 
 
 An empty string compresses to a *non-empty* payload, exactly as in the original: `compressToBase64("")` is `"Q==="`, not `""`. Releases before 1.2.0 returned an empty string here, so compressed output of an empty input differs between those versions. Decompressing either form still yields `""`.
 
+### `Data` needs its byte order swapped
+
+`compress(input:) -> Data` stores each 16-bit unit **little-endian**. `compressToUInt8Array` and the JavaScript `compressToUint8Array` store it **big-endian**. Converting the type with `Data(_:)` or `[UInt8](_:)` copies the bytes without reordering them, so a `Data` payload handed to JavaScript is read as different data — and it **fails silently**, returning an empty string or meaningless text rather than reporting an error:
+
+```javascript
+// The bytes of `LZString.compress(input: "Hello, World!") as Data`
+LZString.decompressFromUint8Array(new Uint8Array([133, 4, 54, 48, 246, 96, 64, 3, 14, 4, 1, 169, 128, 57, 4, 38, 0, 34]))
+// "ࠨࠨࠨࠨࠨᦼ…" — not an error
+```
+
+The simplest fix is to use `compressToUInt8Array` whenever the destination is JavaScript. If you already have a `Data`, swap each pair of bytes:
+
+```swift
+let data: Data = LZString.compress(input: text)
+var forJavaScript = [UInt8]()
+forJavaScript.reserveCapacity(data.count)
+for index in stride(from: data.startIndex, to: data.endIndex, by: 2) {
+    forJavaScript.append(data[index + 1])
+    forJavaScript.append(data[index])
+}
+```
+
+The same applies in reverse: `decompress(input:)` taking `Data` does not read a JavaScript `Uint8Array` until the pairs are swapped.
+
 ## Caveats
 
 ### The raw `String` format is deprecated
@@ -155,12 +192,28 @@ Use `Data`, `[UInt8]`, or `compressToUTF16` when you need a lossless result. See
 
 ### Malformed input does not throw
 
-Decompression never traps, but it is **not** a validity check. Given input that is not valid compressed data, it returns either an empty string or a meaningless one — matching the original JavaScript implementation exactly:
+Decompression never traps, but it is **not** a validity check. Given input that is not valid compressed data, it returns either an empty string or a meaningless one:
 
 ```swift
 LZString.decompressFromBase64(input: "A")         // ""
 LZString.decompressFromBase64(input: "not-valid") // "둞è둞è둞è"
 ```
+
+Those two happen to agree with the original JavaScript implementation, but **malformed input is not guaranteed to behave identically**. The byte-for-byte compatibility this library promises is about complete, valid payloads.
+
+On a **truncated** payload this library is deliberately stricter. It stops as soon as the input is exhausted, while JavaScript treats reads past the end as zero bits and can sometimes still finish ([#21](https://github.com/takagi-denki/lzstring-swift/issues/21)):
+
+```swift
+LZString.decompressFromBase64(input: "IZ") // ""
+```
+
+```javascript
+LZString.decompressFromBase64("IZ") // "a"
+```
+
+Every such difference is pinned by name in `Tests/LZStringTests/MalformedInputTests.swift`, so none of them is accidental. Other known differences are the return value for empty input (JavaScript `null`, Swift `""`, because the Swift return type is non-optional) and the handling of an odd-length `[UInt8]`, which JavaScript throws on and this library does not.
+
+An empty return value is ambiguous on its own: it is what a successful decode of empty text produces as well as what a failure produces, so you cannot use it to tell the two apart.
 
 Verify your data separately if it comes from an untrusted source.
 
