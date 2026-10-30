@@ -46,19 +46,30 @@ let benchmarks: @Sendable () -> Void = {
     // internally, so a negative value inverts the range and the gate stops detecting
     // anything. Direction is handled by the metric's polarity.
     //
-    // Only throughput p50 gates. The others are recorded for information but not checked:
-    // wall clock and memory swing widely even for identical code.
+    // Only `mallocCountTotal` gates. It is the one metric here that is deterministic:
+    // identical code allocates an identical number of times, so the gate cannot fire on
+    // measurement noise.
     //
-    // The tolerance is 15%. Throughput percentiles are stored as integers after unit
-    // normalisation, so a one- or two-unit jitter in p50 is already several percent:
-    // at a stored 39K one unit is 2.6% and two are 5.1%; at 23K one unit is 4.3% and two
-    // are 8.7%. At 5% an unchanged tree failed two runs out of three (by 5% and 7%), so
-    // 15% clears the quantisation ceiling and the observed noise while still catching
-    // real regressions (an injected one measured 41%).
+    // Throughput used to gate at 15% and no longer does (issue #87). The workflow measures
+    // the baseline and the candidate sequentially in one job, and the second measurement is
+    // systematically lower: a comment-only commit, compiling to code identical to main,
+    // was reported as 18-29% worse on 9 of 18 benchmarks. That bias is larger than any
+    // tolerance that would still catch a real regression, and it is not the quantisation
+    // problem from #56 either, since it showed up at a stored value of 7279 where one unit
+    // is 0.014%. Throughput, wall clock and memory are recorded for information; measure
+    // them locally with `swift package benchmark`, where the comparison is stable.
+    //
+    // Both a relative and an absolute tolerance are set, and package-benchmark evaluates
+    // them independently, so either one firing is a deviation. The relative tolerance is
+    // what catches an algorithmic regression, which shows up as a multiple rather than a
+    // few percent: restoring the phrase-keyed compressor dictionary moves a malloc count
+    // from 17 back to 907. The absolute tolerance covers the case the relative one cannot,
+    // where the baseline count is 0 and package-benchmark reports a relative difference of
+    // 0 to avoid dividing by zero.
     let thresholds: [BenchmarkMetric: BenchmarkThresholds] = [
-        .throughput: BenchmarkThresholds(relative: [.p50: 15.0]),
+        .mallocCountTotal: BenchmarkThresholds(relative: [.p50: 25.0], absolute: [.p50: 50]),
+        .throughput: BenchmarkThresholds(relative: [:], absolute: [:]),
         .wallClock: BenchmarkThresholds(relative: [:], absolute: [:]),
-        .mallocCountTotal: BenchmarkThresholds(relative: [:], absolute: [:]),
         .allocatedResidentMemory: BenchmarkThresholds(relative: [:], absolute: [:]),
     ]
     
@@ -187,8 +198,9 @@ let benchmarks: @Sendable () -> Void = {
     preflightLossless("URI (short)", input: shortText, decoded: LZString.decompressFromEncodedURIComponent(input: shortURI))
 
     // Short payloads measure a few microseconds per sample and swing by about 20% between
-    // runs of identical code, which is wider than the gate's tolerance. They are recorded
-    // for information but not gated, so they cannot fail CI at random.
+    // runs of identical code. Their malloc counts are as deterministic as any other
+    // benchmark's, but their timings are the least meaningful, so they stay fully
+    // informational rather than being read as a signal.
     var informational = Benchmark.defaultConfiguration
     informational.thresholds = [
         .throughput: BenchmarkThresholds(relative: [:], absolute: [:]),
