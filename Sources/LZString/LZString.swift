@@ -323,9 +323,15 @@ public func compress(input: String) -> String {
 /// - Parameter input: The text to compress.
 /// - Returns: The compressed stream as little-endian 16-bit units.
 public func compress(input: String) -> Data {
-    return _compress(input: input, bitPerChar: 16, charFromInt: { a in
-        return Data([UInt8(a % 256), UInt8(a >> 8)])
+    // Collect the bytes in an array and make the `Data` once (issue #92). Emitting a
+    // `Data` per 16-bit unit allocated one object for every two bytes of output; the
+    // byte order is unchanged, little-endian, which is the opposite of
+    // `compressToUInt8Array`.
+    let bytes: [UInt8] = _compress(input: input, bitPerChar: 16, charFromInt: { a in
+        return [UInt8(a % 256), UInt8(a >> 8)]
     })
+
+    return Data(bytes)
 }
 
 // TODO: Change Generics

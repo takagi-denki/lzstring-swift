@@ -184,6 +184,19 @@ let benchmarks: @Sendable () -> Void = {
         }
     }
 
+    // The Data path on the same payload (issue #92). The other large benchmarks above
+    // cover the formats that emit ASCII or raw bytes; this one is where the output used to
+    // cost an allocation per 16-bit unit, so it is the one that shows the difference.
+    preflightLossless("Data (large incompressible)",
+                      input: incompressible,
+                      decoded: LZString.decompress(input: LZString.compress(input: incompressible) as Data))
+
+    Benchmark("Compress (Data, large incompressible)") { benchmark in
+        for _ in benchmark.scaledIterations {
+            blackHole(LZString.compress(input: incompressible) as Data)
+        }
+    }
+
     // --- ASCII decoder payload shapes (issue #58) ---
     // The 445-unit case above is the large ASCII payload; these add a short payload and
     // one whose source text is Unicode, so the decoder's output work differs.
