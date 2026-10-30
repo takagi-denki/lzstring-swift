@@ -94,13 +94,17 @@ const hasLoneSurrogate = s => {
   return false;
 };
 
-function expectations(id, baseId, prefixLength, note, width, position) {
+// The case carries no prose: a description that lives in the fixture can drift away from
+// the code that writes it, which is what happened when #68 translated this script and left
+// the committed fixture in Japanese (issue #85). The Swift side builds its diagnostic from
+// `width` and `position` instead.
+function expectations(id, baseId, prefixLength, width, position) {
   const s = bases[baseId].slice(0, prefixLength);
   // A Swift String cannot hold a lone surrogate, so a prefix that splits a pair is skipped.
   if (hasLoneSurrogate(s)) return null;
   if (lz.decompressFromBase64(lz.compressToBase64(s)) !== s) throw new Error("js roundtrip failed: " + id);
   return {
-    id, baseId, prefixLength, note, width, position,
+    id, baseId, prefixLength, width, position,
     base64: lz.compressToBase64(s),
     uri: lz.compressToEncodedURIComponent(s),
     utf16Hex: hex16(units(lz.compressToUTF16(s))),
@@ -124,8 +128,7 @@ for (const baseId of ["repeatedPattern", "jsonLike", "highEntropy"]) {
     (exercised[baseId] ||= []).push(Number(nb));
     for (const [label, len] of [["before", ii], ["at", ii + 1], ["after", ii + 2]]) {
       if (len < 1 || len > bases[baseId].length) continue;
-      const c = expectations(`${baseId}-w${nb}-${label}`, baseId, len,
-        `growth to numBits ${nb}, ${label}`, Number(nb), label);
+      const c = expectations(`${baseId}-w${nb}-${label}`, baseId, len, Number(nb), label);
       if (c) cases.push(c);
     }
   }
@@ -133,8 +136,7 @@ for (const baseId of ["repeatedPattern", "jsonLike", "highEntropy"]) {
 
 for (const baseId of Object.keys(bases)) {
   const widths = [...new Set(transitions(bases[baseId]).map(x => x.nb))];
-  const c = expectations(`${baseId}-full`, baseId, bases[baseId].length,
-    `full length; widths reached ${JSON.stringify(widths)}`, Math.max(...widths), "full");
+  const c = expectations(`${baseId}-full`, baseId, bases[baseId].length, Math.max(...widths), "full");
   if (c) cases.push(c);
 }
 
@@ -153,16 +155,18 @@ console.log(`wrote ${dest}: ${cases.length} cases, widths ${JSON.stringify(exerc
 // of Base64, so the expectations can be committed in full rather than hashed. The input
 // itself is not committed; both sides build it from `unit` and `count`.
 const repeatedSpecs = [
-  { id: "a-4Ki",       unit: "a",    count: 4096,   note: "single character, 4 Ki units" },
-  { id: "a-16Ki",      unit: "a",    count: 16384,  note: "single character, 16 Ki units" },
-  { id: "a-64Ki",      unit: "a",    count: 65536,  note: "single character, 64 Ki units" },
-  { id: "a-256Ki",     unit: "a",    count: 262144, note: "single character, 256 Ki units" },
-  { id: "a-1Mi",       unit: "a",    count: 1048576, note: "single character, 1 Mi units" },
-  { id: "ab-8Ki",      unit: "ab",   count: 4096,   note: "two-character pattern, 8 Ki units" },
-  { id: "abcd-1Mi",    unit: "abcd", count: 262144, note: "four-character pattern, 1 Mi units" },
-  { id: "japanese-64Ki", unit: "\u65e5\u672c", count: 32768, note: "non-ASCII BMP pattern, 64 Ki units" },
+  // `id` already says what each case is, and `unit` and `count` define it exactly, so no
+  // prose is stored here either (issue #85).
+  { id: "a-4Ki",         unit: "a",    count: 4096 },
+  { id: "a-16Ki",        unit: "a",    count: 16384 },
+  { id: "a-64Ki",        unit: "a",    count: 65536 },
+  { id: "a-256Ki",       unit: "a",    count: 262144 },
+  { id: "a-1Mi",         unit: "a",    count: 1048576 },
+  { id: "ab-8Ki",        unit: "ab",   count: 4096 },
+  { id: "abcd-1Mi",      unit: "abcd", count: 262144 },
+  { id: "japanese-64Ki", unit: "\u65e5\u672c", count: 32768 },
   // Surrogate pairs: a phrase boundary can fall between the two halves of one emoji.
-  { id: "emoji-64Ki",  unit: "\u{1F600}", count: 32768, note: "surrogate pairs, 64 Ki units" },
+  { id: "emoji-64Ki",    unit: "\u{1F600}", count: 32768 },
 ];
 
 const repeated = repeatedSpecs.map(spec => {

@@ -26,7 +26,6 @@ struct LargePhraseTests {
         let id: String
         let unit: String
         let count: Int
-        let note: String
         let inputUtf16Units: Int
         let base64: String
         let uri: String
