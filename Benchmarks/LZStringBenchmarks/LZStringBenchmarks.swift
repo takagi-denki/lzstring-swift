@@ -151,6 +151,28 @@ let benchmarks: @Sendable () -> Void = {
         }
     }
 
+    // Base64 and URI emit one ASCII symbol per six bits of output, so the per-symbol cost
+    // dominates when the payload barely compresses (issue #77). The 445-unit text measured
+    // above is the typical-input shape, where output volume is much lower.
+    preflightLossless("Base64 (large incompressible)",
+                      input: incompressible,
+                      decoded: LZString.decompressFromBase64(input: LZString.compressToBase64(input: incompressible)))
+    preflightLossless("URI (large incompressible)",
+                      input: incompressible,
+                      decoded: LZString.decompressFromEncodedURIComponent(input: LZString.compressToEncodedURIComponent(input: incompressible)))
+
+    Benchmark("Compress (Base64, large incompressible)") { benchmark in
+        for _ in benchmark.scaledIterations {
+            blackHole(LZString.compressToBase64(input: incompressible))
+        }
+    }
+
+    Benchmark("Compress (URI, large incompressible)") { benchmark in
+        for _ in benchmark.scaledIterations {
+            blackHole(LZString.compressToEncodedURIComponent(input: incompressible))
+        }
+    }
+
     // --- ASCII decoder payload shapes (issue #58) ---
     // The 445-unit case above is the large ASCII payload; these add a short payload and
     // one whose source text is Unicode, so the decoder's output work differs.

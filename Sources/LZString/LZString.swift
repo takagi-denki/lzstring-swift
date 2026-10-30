@@ -3,6 +3,14 @@ import Foundation
 private let keyStrBase64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
 private let keyStrBase64Array = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 62, 0, 0, 0, 63, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 0, 0, 0, 64, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 0, 0, 0, 0, 0, 0, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 private let keyStrUriSafe = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-$"
+/// The encoding side of the alphabets, as ASCII bytes.
+///
+/// `compressToBase64` and `compressToEncodedURIComponent` emit known ASCII, so they build
+/// a byte buffer and convert to a `String` once at the end (issue #77). These are derived
+/// from the strings above rather than written out again, so the two cannot drift apart.
+private let keyStrBase64Bytes = Array(keyStrBase64.utf8)
+private let keyStrUriSafeBytes = Array(keyStrUriSafe.utf8)
+
 private let keyStrUriSafeArray = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 64, 0, 0, 0, 0, 0, 0, 62, 0, 63, 0, 0, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 0, 0, 0, 0, 0, 0, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
 
@@ -82,19 +90,14 @@ func asciiIndexableBytes(_ s: String) -> [UInt8]? {
 /// - Parameter input: The text to compress.
 /// - Returns: The compressed stream written in the Base64 alphabet.
 public func compressToBase64(input: String) -> String {
-    let result = _compress(input: input, bitPerChar: 6, charFromInt: { a in String(keyStrBase64[a])})
-    switch result.count % 4 {
-    case 0:
-        return result
-    case 1:
-        return result + "==="
-    case 2:
-        return result + "=="
-    case 3:
-        return result + "="
-    default:
-        return ""
-    }
+    var bytes: [UInt8] = _compress(input: input, bitPerChar: 6, charFromInt: { a in [keyStrBase64Bytes[a]] })
+
+    // Pad to a multiple of four. Every six-bit symbol is one ASCII byte, so the byte count
+    // is also the character count the previous String-based version measured.
+    let padding = (4 - bytes.count % 4) % 4
+    bytes.append(contentsOf: repeatElement(UInt8(ascii: "="), count: padding))
+
+    return String(decoding: bytes, as: UTF8.self)
 }
 
 /// Decompresses a stream produced by `compressToBase64(input:)`.
@@ -234,7 +237,9 @@ public func decompressFromUInt8Array(input: [UInt8]) -> String {
 /// - Parameter input: The text to compress.
 /// - Returns: The compressed stream written in the URL-safe alphabet.
 public func compressToEncodedURIComponent(input: String) -> String {
-    return _compress(input: input, bitPerChar: 6, charFromInt: { i in String(keyStrUriSafe[i])})
+    let bytes: [UInt8] = _compress(input: input, bitPerChar: 6, charFromInt: { i in [keyStrUriSafeBytes[i]] })
+
+    return String(decoding: bytes, as: UTF8.self)
 }
 
 /// Decompresses a stream produced by `compressToEncodedURIComponent(input:)`.
@@ -645,7 +650,17 @@ private func _decompress(length: Int, resetValue: Int, nextValue: @escaping GetN
     // Phrases hold UTF-16 code units, so they are stored as UInt16 and appended to
     // `result` without conversion. Dictionary codes and counters stay Int: they are not
     // code units and can exceed UInt16.max on large inputs (issue #75).
-    var dict : [Int:[UInt16]] = [0 : [0], 1 : [1], 2 : [2]]
+    // Dictionary codes are dense: they start at 0, grow one at a time and are never
+    // removed, so an array indexed by code replaces the hash table (issue #76). From the
+    // first append below, `dict.count == dictSize` holds at every point where a code is
+    // looked up.
+    var dict : [[UInt16]] = [[0], [1], [2]]
+    // A fixed, modest reserve, not derived from the input: the decoded length is not known
+    // here and guessing it from the compressed size would let a crafted stream ask for a
+    // large allocation. 256 slots remove most of the growth reallocations; raising it to
+    // 1024 measured no further gain, and beyond the reserve the array keeps doubling as
+    // before, so large inputs behave as they did.
+    dict.reserveCapacity(256)
     var next = 0
     var enlargeIn = 4
     var dictSize = 4
@@ -721,7 +736,8 @@ private func _decompress(length: Int, resetValue: Int, nextValue: @escaping GetN
     }
 
     w = [firstUnit]
-    dict[3] = w
+    // Code 3, which makes dict.count == dictSize == 4.
+    dict.append(w)
     result.append(contentsOf: w)
 
     while true {
@@ -737,7 +753,7 @@ private func _decompress(length: Int, resetValue: Int, nextValue: @escaping GetN
                 return ""
             }
 
-            dict[dictSize] = [UInt16(literal)]
+            dict.append([UInt16(literal)])
             dictSize += 1
             code = dictSize - 1
             enlargeIn -= 1
@@ -746,7 +762,7 @@ private func _decompress(length: Int, resetValue: Int, nextValue: @escaping GetN
                 return ""
             }
 
-            dict[dictSize] = [UInt16(literal)]
+            dict.append([UInt16(literal)])
             dictSize += 1
             code = dictSize - 1
             enlargeIn -= 1
@@ -759,24 +775,25 @@ private func _decompress(length: Int, resetValue: Int, nextValue: @escaping GetN
             numBits += 1
         }
 
-        if let e = dict[code] {
-            entry = e
+        // _slide accumulates bits into a non-negative Int, so a code is never negative
+        // and `code < dict.count` is a complete bounds check.
+        if code < dict.count {
+            entry = dict[code]
+        } else if code == dictSize {
+            // LZW KwKwK case: the entry is w + w[0]; `entry` still holds the
+            // previous iteration's value (empty on the first pass) and must not be used.
+            var tmp = w
+            tmp.append(w[0])
+            entry = tmp
         } else {
-            if code == dictSize {
-                // LZW KwKwK case: the entry is w + w[0]; `entry` still holds the
-                // previous iteration's value (empty on the first pass) and must not be used.
-                var tmp = w
-                tmp.append(w[0])
-                entry = tmp
-            } else {
-                return ""
-            }
+            // Beyond dictSize the stream is invalid.
+            return ""
         }
 
         result.append(contentsOf: entry)
         var tmp = w
         tmp.append(entry[0])
-        dict[dictSize] = tmp
+        dict.append(tmp)
         dictSize += 1
         enlargeIn -= 1
         w = entry
