@@ -28,7 +28,6 @@ struct JavaScriptDifferentialTests {
         let id: String
         let baseId: String
         let prefixLength: Int
-        let note: String
         let width: Int
         let position: String
         let base64: String
@@ -38,6 +37,15 @@ struct JavaScriptDifferentialTests {
         let inputUtf16Hex: String
 
         var description: String { id }
+
+        /// What the fixture used to carry as a prose `note`. Deriving it here keeps the
+        /// fixture free of generator-authored text, which is what drifted out of step when
+        /// #68 translated the script and left the committed fixture in Japanese (#85).
+        var growth: String {
+            position == "full"
+                ? "full length, highest numBits \(width)"
+                : "growth to numBits \(width), \(position)"
+        }
     }
 
     static let corpus: Corpus = {
@@ -89,7 +97,7 @@ struct JavaScriptDifferentialTests {
 
         let comment = Comment(rawValue: """
             seed=\(corpus.seed) case=\(testCase.id) format=\(format) \
-            (growth to numBits \(testCase.width), position \(testCase.position): \(testCase.note))
+            (\(testCase.growth))
             first difference at index \(index) — swift=\(actualValue) js=\(expectedValue) \
             (swift \(actual.count) elements / js \(expected.count) elements)
             """)
