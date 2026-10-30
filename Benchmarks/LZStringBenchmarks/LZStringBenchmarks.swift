@@ -198,18 +198,26 @@ let benchmarks: @Sendable () -> Void = {
     preflightLossless("URI (short)", input: shortText, decoded: LZString.decompressFromEncodedURIComponent(input: shortURI))
 
     // Short payloads measure a few microseconds per sample and swing by about 20% between
-    // runs of identical code. Their malloc counts are as deterministic as any other
-    // benchmark's, but their timings are the least meaningful, so they stay fully
-    // informational rather than being read as a signal.
-    var informational = Benchmark.defaultConfiguration
-    informational.thresholds = [
+    // runs of identical code, so their timings are not gated (issues #58 and #71). Their
+    // malloc counts are as deterministic as any other benchmark's and stay gated (issue
+    // #89); the name says what is exempt, so an allocation regression on a short path is
+    // not silently ignored.
+    //
+    // The absolute tolerance is tightened from the default 50 because these counts are
+    // small — 10 for the compression benchmark and 23 for the three decoder ones — and 50
+    // would permit any change at all. The relative tolerance binds below a count of 20 and
+    // the absolute one above it, so at the measured counts the smallest increase that fails
+    // is 3 and 6 respectively. Both still absorb an incidental one- or two-allocation
+    // change, which is as tight as is useful for a metric that does not drift on its own.
+    var timingsNotGated = Benchmark.defaultConfiguration
+    timingsNotGated.thresholds = [
+        .mallocCountTotal: BenchmarkThresholds(relative: [.p50: 25.0], absolute: [.p50: 5]),
         .throughput: BenchmarkThresholds(relative: [:], absolute: [:]),
         .wallClock: BenchmarkThresholds(relative: [:], absolute: [:]),
-        .mallocCountTotal: BenchmarkThresholds(relative: [:], absolute: [:]),
         .allocatedResidentMemory: BenchmarkThresholds(relative: [:], absolute: [:]),
     ]
 
-    Benchmark("Decompress (Base64, short)", configuration: informational) { benchmark in
+    Benchmark("Decompress (Base64, short)", configuration: timingsNotGated) { benchmark in
         for _ in benchmark.scaledIterations {
             blackHole(LZString.decompressFromBase64(input: shortBase64))
         }
@@ -224,13 +232,13 @@ let benchmarks: @Sendable () -> Void = {
     let shortUTF16 = LZString.compressToUTF16(input: shortText)
     preflightLossless("UTF16 (short)", input: shortText, decoded: LZString.decompressFromUTF16(input: shortUTF16))
 
-    Benchmark("Decompress (UTF16, short)", configuration: informational) { benchmark in
+    Benchmark("Decompress (UTF16, short)", configuration: timingsNotGated) { benchmark in
         for _ in benchmark.scaledIterations {
             blackHole(LZString.decompressFromUTF16(input: shortUTF16))
         }
     }
 
-    Benchmark("Decompress (URI, short)", configuration: informational) { benchmark in
+    Benchmark("Decompress (URI, short)", configuration: timingsNotGated) { benchmark in
         for _ in benchmark.scaledIterations {
             blackHole(LZString.decompressFromEncodedURIComponent(input: shortURI))
         }
@@ -304,9 +312,9 @@ let benchmarks: @Sendable () -> Void = {
         }
     }
 
-    // Short payloads swing by about 20% between runs of identical code, so this one is
-    // recorded for information and not gated, like the short decoder benchmarks above.
-    Benchmark("Compress (Base64, short message)", configuration: informational) { benchmark in
+    // Like the short decoder benchmarks above: the timing is not gated, the allocation
+    // count is.
+    Benchmark("Compress (Base64, short message)", configuration: timingsNotGated) { benchmark in
         for _ in benchmark.scaledIterations {
             blackHole(LZString.compressToBase64(input: shortMessage))
         }
