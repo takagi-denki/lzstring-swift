@@ -15,6 +15,7 @@ The compressed output matches the original JavaScript implementation byte for by
 
 - **Compatible with the JavaScript original.** Every format's output is checked against `lz-string` byte for byte. Four of them are exchanged with JavaScript directly; `Data` needs its byte order swapped first.
 - **Six output formats** — Base64, URL-safe, UTF-16, `[UInt8]`, `Data`, and raw `String` (deprecated).
+- **Low allocation.** Compressing allocates about 2% of what 1.2.0 did, and decompressing about half, for byte-identical output. See [Performance](#performance).
 - **No third-party dependencies.** The library target imports only `Foundation`.
 - **Runs everywhere Swift does.** CI builds on macOS, Linux, Windows, and the static Linux musl SDK.
 
@@ -34,7 +35,7 @@ Add the package to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/takagi-denki/lzstring-swift.git", from: "1.2.0"),
+    .package(url: "https://github.com/takagi-denki/lzstring-swift.git", from: "1.3.0"),
 ]
 ```
 
@@ -125,6 +126,21 @@ let data = LZString.compress(input: text) as Data // ✅
 
 The two carry the same 16-bit stream in **opposite byte orders**: `Data` is little-endian, `[UInt8]` is big-endian. Within Swift this never matters, because each format decompresses with its own counterpart. It matters as soon as the bytes leave for JavaScript — see [`Data` needs its byte order swapped](#data-needs-its-byte-order-swapped).
 
+## Performance
+
+1.3.0 is a performance release. **The compressed bytes did not change**, so a payload written by 1.2.0 still decompresses here and vice versa; nothing stored by an older version needs migrating.
+
+Allocation counts are deterministic, so these are reproducible anywhere (`swift package benchmark`, `mallocCountTotal` p50, the 445-unit Latin paragraph the benchmarks use):
+
+| | 1.2.0 | 1.3.0 |
+| --- | ---: | ---: |
+| `compressToBase64` | 907 | 18 |
+| `compress` returning `Data` | 1061 | 19 |
+| `compressToUInt8Array` | 1062 | 17 |
+| `decompressFromBase64` | 624 | 329 |
+
+Throughput depends on the machine, so treat the rest as an indication rather than a figure to rely on. On an Apple-silicon macOS build, throughput p50 roughly doubled on the mid-sized benchmarks and rose about sixfold on 64 Ki units of a repeating pattern, because the compressor no longer copies a growing phrase for every code unit. A short 11-character payload gained about 4%: there is little per-unit work to remove at that size. Measure your own workload with `swift package benchmark`.
+
 ## Interoperating with JavaScript
 
 Four formats are exchanged with `lz-string` directly, with no conversion:
@@ -154,7 +170,7 @@ LZString.decompressFromEncodedURIComponent("BIUwNmD2A0AEDqkBOYAmBCIA")
 
 The reverse works too — pass a string produced by `lz-string` to the matching `decompressFrom…` function.
 
-An empty string compresses to a *non-empty* payload, exactly as in the original: `compressToBase64("")` is `"Q==="`, not `""`. Releases before 1.2.0 returned an empty string here, so compressed output of an empty input differs between those versions. Decompressing either form still yields `""`.
+An empty string compresses to a *non-empty* payload, exactly as in the original: `compressToBase64("")` is `"Q==="`, not `""`. Releases before 1.2.0 returned an empty string here, so compressed output of an empty input differs between those versions. Decompressing either form still yields `""`. No release since has changed any output: 1.3.0 is byte-compatible with 1.2.0 in both directions.
 
 ### `Data` needs its byte order swapped
 
