@@ -15,6 +15,7 @@ pieroxy 氏による LZW ベースの文字列圧縮ライブラリ [lz-string](
 
 - **本家 JavaScript 版と互換。** 全形式の出力を `lz-string` とバイト単位で照合しています。そのうち 4 形式は JavaScript と直接交換でき、`Data` はバイト順の入れ替えが必要です。
 - **6 つの出力形式** — Base64、URL セーフ、UTF-16、`[UInt8]`、`Data`、生の `String`（非推奨）。
+- **確保回数が少ない。** 圧縮の確保回数は 1.2.0 の約 2%、展開は約半分になりました。出力はバイト単位で同一です。[性能](#性能)を参照してください。
 - **サードパーティ依存なし。** ライブラリターゲットが import するのは `Foundation` のみです。
 - **Swift が動く環境で動く。** CI は macOS / Linux / Windows / static Linux (musl) でビルドしています。
 
@@ -34,7 +35,7 @@ pieroxy 氏による LZW ベースの文字列圧縮ライブラリ [lz-string](
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/takagi-denki/lzstring-swift.git", from: "1.2.0"),
+    .package(url: "https://github.com/takagi-denki/lzstring-swift.git", from: "1.3.0"),
 ]
 ```
 
@@ -125,6 +126,21 @@ let data = LZString.compress(input: text) as Data // ✅
 
 この 2 つは同じ 16 ビットストリームを**逆のバイト順**で持ちます。`Data` がリトルエンディアン、`[UInt8]` がビッグエンディアンです。Swift の中だけで使う限り問題になりません。各形式は対応する展開関数とだけ組み合わせるためです。問題になるのはバイト列を JavaScript へ渡すときで、[`Data` はバイト順の入れ替えが必要](#data-はバイト順の入れ替えが必要)を参照してください。
 
+## 性能
+
+1.3.0 は性能リリースです。**圧縮結果のバイト列は変わっていません。** 1.2.0 が書き出したペイロードはそのまま展開でき、逆も成り立ちます。古いバージョンで保存したデータの移行は不要です。
+
+確保回数は決定的な指標なので、以下はどの環境でも再現できます（`swift package benchmark`、`mallocCountTotal` の p50、ベンチマークが使う 445 単位の Latin 文章）。
+
+| | 1.2.0 | 1.3.0 |
+| --- | ---: | ---: |
+| `compressToBase64` | 907 | 18 |
+| `compress`（`Data` を返す方） | 1061 | 19 |
+| `compressToUInt8Array` | 1062 | 17 |
+| `decompressFromBase64` | 624 | 329 |
+
+throughput は環境に依存するため、以下は目安として読んでください。Apple シリコンの macOS ビルドでは、中規模のベンチマークで throughput の p50 がおおむね 2 倍、64 Ki 単位の繰り返しパターンでは約 6 倍になりました。圧縮器がコードユニットごとに伸びていくフレーズをコピーしなくなったためです。11 文字の短いペイロードは約 4% で、この規模では削れる単位あたりの処理がほとんどありません。実際の負荷は `swift package benchmark` で測ってください。
+
 ## JavaScript との相互運用
 
 次の 4 形式は変換なしで `lz-string` と直接交換できます。
@@ -154,7 +170,7 @@ LZString.decompressFromEncodedURIComponent("BIUwNmD2A0AEDqkBOYAmBCIA")
 
 逆方向も同様です。`lz-string` が生成した文字列を、対応する `decompressFrom…` に渡してください。
 
-空文字列も本家と同じく、**空でない**圧縮結果になります。`compressToBase64("")` は `""` ではなく `"Q==="` です。1.2.0 より前のリリースは空文字列を返していたため、空入力の圧縮結果はバージョン間で異なります。どちらの形式も展開すれば `""` に戻ります。
+空文字列も本家と同じく、**空でない**圧縮結果になります。`compressToBase64("")` は `""` ではなく `"Q==="` です。1.2.0 より前のリリースは空文字列を返していたため、空入力の圧縮結果はバージョン間で異なります。どちらの形式も展開すれば `""` に戻ります。それ以降のリリースで出力が変わったことはありません。1.3.0 は 1.2.0 と双方向にバイト互換です。
 
 ### `Data` はバイト順の入れ替えが必要
 
